@@ -7,7 +7,9 @@ Esta guia explica como continuar el proyecto por fases usando agentes de IA sin 
 Mensaje sugerido para pegar al iniciar un nuevo chat/agente:
 
 ```text
+Estamos en la rama: [nombre-rama].
 Lee primero README.md y toda la carpeta docs/. La fuente principal es docs/MAESTRO.MD.
+Revisa tambien docs/GIT_WORKFLOW.md antes de editar.
 No implementes nada todavia. Primero resume el estado actual, la fase que corresponde y propon una ruta corta de trabajo.
 Respeta scripts/check.sh como validacion final obligatoria.
 ```
@@ -15,11 +17,25 @@ Respeta scripts/check.sh como validacion final obligatoria.
 Si ya queres ejecutar una fase concreta:
 
 ```text
+Estamos en la rama: [nombre-rama].
 Lee README.md y docs/. Vamos a trabajar Fase X: [nombre].
 Antes de editar, identifica archivos existentes relacionados, propone cambios minimos y luego implementa con tests.
 No modifiques fases futuras salvo que sea estrictamente necesario.
 Al terminar, ejecuta ./scripts/check.sh y actualiza docs/DECISIONS.md si corresponde.
 ```
+
+## Seguridad Con GitHub
+
+El flujo seguro de ramas, Pull Requests, merges y rollback esta definido en `docs/GIT_WORKFLOW.md`.
+
+Reglas minimas:
+
+- No trabajar directo en `main`.
+- Crear una rama por tarea o fase.
+- Pasar el nombre de la rama al agente como parte del contexto.
+- Revisar `git status --short --branch` antes y despues de editar.
+- Abrir Pull Request con pruebas ejecutadas, riesgos y rollback.
+- Usar `git revert` para deshacer cambios ya mergeados.
 
 ## Ruta De Trabajo Por Fase
 
@@ -30,9 +46,11 @@ Cada fase debe cerrarse con este orden:
 3. Escribir o ajustar tests primero cuando sea posible.
 4. Implementar el cambio minimo.
 5. Ejecutar `./scripts/check.sh`.
-6. Actualizar documentacion.
-7. Registrar decisiones importantes en `docs/DECISIONS.md`.
-8. Actualizar o crear el archivo correspondiente en `docs/phases/`.
+6. Revisar `git status --short --branch` y el diff.
+7. Actualizar documentacion.
+8. Registrar decisiones importantes en `docs/DECISIONS.md`.
+9. Actualizar o crear el archivo correspondiente en `docs/phases/`.
+10. Abrir Pull Request siguiendo `docs/GIT_WORKFLOW.md`.
 
 ## Como Guardar Una Fase
 

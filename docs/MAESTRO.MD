@@ -10,13 +10,14 @@ Antes de modificar codigo, leer en este orden:
 4. `docs/ARCHITECTURE.md`
 5. `docs/PHASES.md`
 6. `docs/AGENT_WORKFLOW.md`
-7. `docs/CODE_DOCUMENTATION.md`
-8. `docs/LOGGING_AND_OBSERVABILITY.md`
-9. `docs/TESTING.md`
-10. `docs/DEVELOPMENT_RULES.md`
-11. `docs/CODING_STANDARD.md`
-12. `docs/DECISIONS.md`
-13. `docs/phases/`
+7. `docs/GIT_WORKFLOW.md`
+8. `docs/CODE_DOCUMENTATION.md`
+9. `docs/LOGGING_AND_OBSERVABILITY.md`
+10. `docs/TESTING.md`
+11. `docs/DEVELOPMENT_RULES.md`
+12. `docs/CODING_STANDARD.md`
+13. `docs/DECISIONS.md`
+14. `docs/phases/`
 
 ## Estado Actual
 
@@ -78,6 +79,7 @@ src/
 - Cada proceso importante debe tener logs utiles para diagnostico.
 - Cada nueva logica debe tener test unitario o de integracion segun corresponda.
 - Antes de cerrar cualquier tarea, ejecutar `./scripts/check.sh`.
+- No trabajar directo en `main`; usar ramas y Pull Requests segun `docs/GIT_WORKFLOW.md`.
 
 ## Flujo De Datos Actual
 
@@ -105,6 +107,8 @@ Antes de finalizar una tarea, confirmar:
 
 - `./scripts/check.sh` pasa.
 - No se agregaron secretos.
+- La rama de trabajo no es `main`.
+- El Pull Request incluye pruebas, riesgos y rollback.
 - No se mezclaron responsabilidades entre cliente, parser, repositorio y servicios.
 - La documentacion fue actualizada si cambio arquitectura, fase o uso.
 - `docs/DECISIONS.md` fue actualizado si hubo una decision relevante.

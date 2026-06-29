@@ -48,9 +48,12 @@ Antes de pedirle a otra IA/agente que implemente una fase, indicarle que lea:
 
 - `docs/MAESTRO.MD`
 - `docs/AGENT_WORKFLOW.md`
+- `docs/GIT_WORKFLOW.md`
 - `docs/PROJECT.md`
 - `docs/ARCHITECTURE.md`
 - `docs/PHASES.md`
+
+Los agentes no deben trabajar directo sobre `main`. Cada tarea debe hacerse en una rama propia, validarse con `./scripts/check.sh` y cerrarse mediante Pull Request con pruebas, riesgos y plan de rollback.
 
 ## Estructura del Proyecto
 - `src/`: Código fuente principal.

@@ -15,3 +15,5 @@
 13. **Toda fase debe tener archivo propio en `docs/phases/` con objetivo, alcance, pruebas, logs esperados y resultado final.**
 14. **El flujo futuro de adquisicion debe priorizar navegador con Playwright; la API de Meta queda como componente secundario/mockeable.**
 15. **Todo codigo nuevo debe seguir `docs/CODE_DOCUMENTATION.md` y `docs/LOGGING_AND_OBSERVABILITY.md`.**
+16. **No trabajar directo sobre `main`; usar una rama por tarea y Pull Request segun `docs/GIT_WORKFLOW.md`.**
+17. **Todo PR debe incluir pruebas ejecutadas, riesgos conocidos y plan de rollback.**
