@@ -15,7 +15,8 @@ El proyecto utiliza `pytest` para las pruebas automatizadas.
 
 * Unitarios de cliente Meta Ads con `responses`, sin llamadas reales a internet.
 * Unitarios de parser Meta Ads.
-* Unitarios de componentes Playwright mockeados.
+* Unitarios de componentes Playwright mockeados (BrowserManager, SessionManager, AdsSearcher, AdsExtractor).
+* Unitarios de verificacion de sesion y modo debug.
 * Integracion de repositorios con SQLite en memoria.
 
 ## Dependencias De Testing

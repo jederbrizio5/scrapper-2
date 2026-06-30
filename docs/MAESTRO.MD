@@ -21,7 +21,7 @@ Antes de modificar codigo, leer en este orden:
 
 ## Estado Actual
 
-El proyecto esta estabilizado hasta Fase 2.
+El proyecto esta estabilizado hasta Fase 3.
 
 Implementado:
 
@@ -34,21 +34,15 @@ Implementado:
 - Cliente Meta Ads Library desacoplado de persistencia.
 - DTOs para requests/responses de Meta Ads.
 - Parser de respuesta Graph API a DTOs.
-- Componentes Playwright basicos para prueba de concepto del navegador.
+- Adquisicion por navegador con Playwright: discovery y enrichment.
+- Extraction de usuarios sociales (FB/IG) y seguidores desde Meta Ads Library.
 - Tests unitarios e integracion mockeados.
 
 Decision importante:
 
-- La API de Meta queda como componente secundario y testeado, pero no sera la fuente principal para las proximas fases comerciales.
-- La adquisicion futura debe basarse en navegador con Playwright, porque la API puede estar limitada a anuncios politicos o categorias que no cubren el objetivo comercial del proyecto.
-
-No implementado todavia:
-
-- Fase 3: extraccion robusta de dominios desde anuncios.
-- Fase 4: scraper de landings.
-- Fase 5: scoring de prospectos.
-- Fase 6: CRM/exportacion.
-- Fase 7: automatizacion.
+- La API de Meta queda como componente secundario y testeado.
+- La adquisicion principal se basa en navegador con Playwright, porque la API puede estar limitada a anuncios politicos o categorias que no cubren el objetivo comercial del proyecto.
+- Meta Ads Library funciona sin sesion de Facebook para discovery y enrichment.
 
 ## Arquitectura Vigente
 
@@ -60,11 +54,11 @@ src/
 ├── repositories/           # Persistencia encapsulada por entidad
 └── modules/
     └── meta_ads/
-        ├── client/         # Cliente HTTP Meta Ads Library
+        ├── client/         # Cliente HTTP Meta Ads Library (secundario)
         ├── dto/            # Objetos tipados de entrada/salida
         ├── parser/         # Parseo de JSON externo a DTOs internos
-        ├── browser/        # Playwright y sesiones de navegador
-        └── acquisition/    # PoC de busqueda/extraccion por navegador
+        ├── browser/        # Playwright: BrowserManager, SessionManager
+        └── acquisition/    # AdsSearcher, AdsExtractor, MetaAdsBrowserRunner
 ```
 
 ## Principios Obligatorios
@@ -90,12 +84,24 @@ SearchRequest
   -> SearchResponse[Ad]
 ```
 
-La persistencia existe pero todavia no hay un orquestador productivo que conecte busquedas Meta con guardado en base de datos. Esa conexion debe hacerse en fases futuras sin meter persistencia dentro de `MetaClient`.
+Flujo de Fase 3 por navegador:
+
+```text
+keywords
+  -> MetaAdsBrowserRunner
+  -> AdsSearcher (busqueda en Meta Ads Library)
+  -> AdsExtractor.extract_discovery_ads() (descubrimiento)
+  -> AdsExtractor.enrich_ads() (enriquecimiento)
+  -> BrowserAdResult[] (JSON de salida)
+```
+
+La persistencia existe pero todavia no hay un orquestador productivo que conecte busquedas Meta con guardado en base de datos. Esa conexion no debe meterse dentro de `MetaClient` ni dentro del scraper por navegador.
 
 ## Comandos Oficiales
 
 - Instalar dependencias: `./scripts/install.sh`
 - Ejecutar entrada principal: `./scripts/run.sh`
+- Ejecutar scraper Fase 3: `python scripts/run_meta_ads_browser.py --keyword "curso" --limit 3 --headless`
 - Ejecutar tests: `./scripts/test.sh`
 - Formatear: `./scripts/format.sh`
 - Lint: `./scripts/lint.sh`
@@ -113,10 +119,10 @@ Antes de finalizar una tarea, confirmar:
 - La documentacion fue actualizada si cambio arquitectura, fase o uso.
 - `docs/DECISIONS.md` fue actualizado si hubo una decision relevante.
 
-## Proxima Fase Recomendada
+## Fase Actual
 
-La siguiente fase natural es Fase 3: adquisicion por navegador y extraccion inicial.
+La fase actual es Fase 3 completada: adquisicion por navegador y extraccion inicial.
 
-Debe partir de `docs/phases/PHASE_03_BROWSER_ACQUISITION_PLAN.md`.
+El objetivo fue abrir Meta Ads Library, aplicar filtros, extraer anuncios con landing externa y enriquecer desde el detalle.
 
-El objetivo es fortalecer la lectura de Meta Ads Library por navegador antes de extraer dominios, landings o scoring.
+La documentacion de la fase completa vive en `docs/phases/PHASE_03_BROWSER_ACQUISITION_PLAN.md`.

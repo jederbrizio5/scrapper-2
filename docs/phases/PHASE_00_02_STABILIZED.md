@@ -23,11 +23,11 @@ Dejar una base funcional, testeable y documentada para continuar con fases futur
 
 ## Importante Sobre La API De Meta
 
-El cliente API existe y queda testeado, pero no debe asumirse como fuente principal para futuras fases comerciales.
+El cliente API existe y queda testeado, pero no debe asumirse como fuente principal para adquisicion comercial.
 
 Motivo: la API de Meta Ads Library puede estar limitada a ciertos tipos de anuncios, como politicos o temas especiales, y no cubre el caso principal buscado por este proyecto.
 
-Decision operativa: las proximas fases deben priorizar adquisicion por navegador con Playwright.
+Decision operativa: Fase 3 debe priorizar adquisicion por navegador con Playwright.
 
 ## Como Se Ejecuta
 

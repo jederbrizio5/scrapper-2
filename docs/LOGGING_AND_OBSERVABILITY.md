@@ -34,7 +34,7 @@ Extraccion finalizada ads_found=12 duration_ms=8400
 
 ## Navegador Y Anti-Bloqueo
 
-Las futuras fases basadas en navegador deben priorizar seguridad operativa:
+Los procesos basados en navegador deben priorizar seguridad operativa:
 
 - Tiempos de espera configurables, no valores magicos dispersos.
 - Pausas entre acciones para evitar comportamiento robotico.

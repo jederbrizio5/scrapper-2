@@ -1,11 +1,12 @@
 import logging
+
 from playwright.sync_api import Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
 
 
 class SessionManager:
-    """Maneja el contexto del navegador y la sesión."""
+    """Maneja el contexto del navegador y la pagina."""
 
     def __init__(self, browser: Browser):
         self.browser = browser
@@ -13,7 +14,7 @@ class SessionManager:
         self.page: Page | None = None
 
     def create_session(self) -> Page:
-        logger.info("Creando nueva sesión (contexto y página)...")
+        logger.info("Creando sesion (contexto y pagina)...")
         self.context = self.browser.new_context(
             locale="es-ES", viewport={"width": 1920, "height": 1080}
         )
@@ -25,4 +26,4 @@ class SessionManager:
             self.page.close()
         if self.context:
             self.context.close()
-        logger.info("Sesión cerrada.")
+        logger.info("Sesion cerrada.")

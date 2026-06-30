@@ -3,7 +3,7 @@
 ## Descripción
 Sistema modular de prospección de Meta Ads preparado para desarrollarse por fases mediante personas o agentes de IA.
 
-El estado actual cubre bootstrap, infraestructura de datos y cliente Meta Ads Library. Las fases siguientes deben continuar desde la documentación en `docs/`, especialmente `docs/MAESTRO.MD`.
+El estado actual cubre bootstrap, infraestructura de datos, cliente Meta Ads Library y adquisición robusta por navegador (Fase 3 completa). Las fases siguientes deben continuar desde la documentación en `docs/`, especialmente `docs/MAESTRO.MD`.
 
 ## Instalación
 Para instalar las dependencias necesarias:
@@ -22,6 +22,16 @@ Para iniciar el punto de entrada principal:
 Para ejecutar la prueba de concepto de navegador:
 
 `source venv/bin/activate && PYTHONPATH=. python scripts/run_poc.py`
+
+Para ejecutar Fase 3 contra Meta Ads Library y traer 3 anuncios por keyword con landing externa:
+
+`source venv/bin/activate && python scripts/run_meta_ads_browser.py --keyword "curso" --keyword "marketing" --limit 3 --headless`
+
+Para ejecutar sin enriquecimiento (solo discovery):
+
+`source venv/bin/activate && python scripts/run_meta_ads_browser.py --keyword "curso" --limit 3 --headless --no-enrich`
+
+El resultado queda en `output/meta_ads_browser_results.json`. Para depurar visualmente, ejecutar sin `--headless`.
 
 ## Testing
 Para correr la suite de tests (unitarios y de integración):

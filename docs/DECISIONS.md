@@ -31,9 +31,39 @@
 ## 2026-06-29: Priorizar adquisicion por navegador
 - **Contexto**: La API de Meta Ads Library no cubre de forma suficiente el caso comercial buscado y puede estar limitada a anuncios politicos o categorias especiales.
 - **Decisión**: Mantener el cliente API como componente secundario, testeado y desacoplado, pero orientar Fase 3 a adquisicion por navegador con Playwright.
-- **Consecuencias**: Las proximas fases deben enfocarse en seguridad operativa, tiempos configurables, logs, modo visible/headless y extraccion robusta desde DOM.
+- **Consecuencias**: Fase 3 debe enfocarse en seguridad operativa, tiempos configurables, logs, modo visible/headless y extraccion robusta desde DOM.
 
 ## 2026-06-29: Documentacion obligatoria por fase
 - **Contexto**: El proyecto sera trabajado por multiples agentes y necesita trazabilidad clara.
 - **Decisión**: Crear `docs/phases/` con una plantilla y archivos por fase. Cada fase debe documentar objetivo, alcance, pruebas, logs esperados, ejecucion y resultado final.
 - **Consecuencias**: Un agente nuevo puede continuar leyendo la fase correspondiente sin depender del historial del chat anterior.
+
+## 2026-06-29: Implementacion completa de Fase 3
+- **Contexto**: La Fase 3 requiere adquisicion robusta por navegador con verificacion de sesion, modo debug y estructura JSON documentada.
+- **Decisión**: Implementar SessionManager con verificacion de sesion y espera de login, BrowserManager con soporte para modo debug (navegador visible, slow motion, logs detallados), y serializador JSON que produzca exactamente la estructura documentada eliminando campos adicionales.
+- **Consecuencias**: La fase queda completa con todos los criterios de aceptacion cumplidos: verificacion de sesion, discovery, enrichment, modo debug, modo headless, y 20 tests pasando.
+
+## 2026-06-30: Eliminar dependencia de sesion de Facebook
+- **Contexto**: Meta Ads Library funciona sin sesión de Facebook para descubrimiento y enriquecimiento de anuncios. La lógica de login agregaba complejidad innecesaria y requería intervención manual del usuario.
+- **Decisión**: Eliminar `ensure_session()`, `wait_for_login()` y timeout de login de SessionManager. Simplificar a creación de contexto/página. Eliminar parámetro `--login-timeout` del script CLI.
+- **Consecuencias**: Ejecución sin intervención humana. Eliminación de 4 tests unitarios obsoletos. Simplificación del flujo de ejecución.
+
+## 2026-06-30: Enrichment desde texto del diálogo no desde links
+- **Contexto**: Los links en el diálogo de detalles no son confiables para extraer usuarios sociales. La sección "Información sobre el anunciante" muestra el texto correcto con `@username`, `Identificador:` y conteos de seguidores.
+- **Decisión**: Reescribir extracción de enrichment para parsear el texto del diálogo expandido en lugar de buscar links. Facebook se detecta primero (`@username` o `Identificador: N`), Instagram segundo (`@username`). Los seguidores se parsean con soporte para "mil" (ej. "2,1 mil" → 2100).
+- **Consecuencias**: Extracción confiable de usuarios sociales y seguidores. Mejora significativa en la tasa de enriquecimiento exitoso.
+
+## 2026-06-30: Descripción completa sin truncamiento
+- **Contexto**: El truncamiento de la descripción a 2000 caracteres perdía información valiosa del contenido del anuncio.
+- **Decisión**: Eliminar límite de 2000 caracteres en `_extract_ad_description`. Devolver texto completo del anuncio.
+- **Consecuencias**: Descripciones más largas en el JSON de salida. Información completa del anuncio disponible para procesamiento posterior.
+
+## 2026-06-30: ad_library_url construida correctamente
+- **Contexto**: La URL del anuncio se estaba copiando de la página en lugar de construirse con el library_id.
+- **Decisión**: Construir `ad_library_url` como `https://www.facebook.com/ads/library/?id={library_id}` en lugar de copiar la URL de la página.
+- **Consecuencias**: URLs de anuncios correctas y consistentes en todos los resultados.
+
+## 2026-06-30: Manejo de "Ver detalles del resumen"
+- **Contexto**: Algunos anuncios muestran un diálogo de resumen que requiere un clic adicional en "Ver detalles del anuncio" para acceder a la información completa del anunciante.
+- **Decisión**: Implementar `_enter_from_summary()` que detecta el diálogo de resumen, clickea "Ver detalles del anuncio" interno, y busca el diálogo de detalles resultante. Se excluye el diálogo de resumen de la búsqueda posterior para evitar confusión.
+- **Consecuencias**: Enriquecimiento exitoso para anuncios que muestran resumen en lugar de detalles directos.

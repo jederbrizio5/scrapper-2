@@ -1,15 +1,15 @@
 # Proyecto: Sistema de Prospección de Meta Ads
 
 ## Visión General
-Este sistema tiene como objetivo principal la recolección, procesamiento y evaluación (scoring) de prospectos provenientes de Meta Ads.
+Este sistema tiene como objetivo principal la recoleccion estructurada de anuncios provenientes de Meta Ads Library.
 
-El proyecto está diseñado para construirse modularmente en fases. Actualmente hemos completado la Fase 0 (Bootstrap), la Fase 1 (Infraestructura de datos) y la Fase 2 (Cliente Meta Ads / PoC navegador).
+El proyecto está diseñado para construirse modularmente en fases. Actualmente hemos completado la Fase 0 (Bootstrap), la Fase 1 (Infraestructura de datos), la Fase 2 (Cliente Meta Ads / PoC navegador) y la Fase 3 (Adquisicion robusta por navegador).
 
-Nota de producto: la API de Meta no debe considerarse la fuente principal futura porque puede estar limitada a tipos de anuncios que no sirven al objetivo comercial. El camino principal sera lectura por navegador con controles de tiempo, logs y seguridad operativa.
+Nota de producto: la API de Meta no debe considerarse la fuente principal futura porque puede estar limitada a tipos de anuncios que no sirven al objetivo comercial. El camino principal es lectura por navegador con controles de tiempo, logs y seguridad operativa.
 
 ## Estado Actual
 
-Fase 0, Fase 1 y Fase 2 estan estabilizadas.
+Fase 0, Fase 1, Fase 2 y Fase 3 estan completadas y estabilizadas.
 
 ### Implementado (Fase 0)
 - **Scripts**: instalacion, ejecucion, tests, lint, formato y check general.
@@ -27,18 +27,19 @@ Fase 0, Fase 1 y Fase 2 estan estabilizadas.
 - **MetaClient**: Cliente HTTP genérico para interactuar con la Meta Ads Library, totalmente configurado mediante variables de entorno en `settings.py`.
 - **Excepciones Tipadas**: Clases específicas para manejar autenticación (`AuthenticationException`), límites (`RateLimitException`) y problemas de formato.
 - **Parser y DTOs**: Capa estricta de parseo transformando la respuesta de la Graph API a Data Transfer Objects (Ads, Page, Advertiser, Media).
-- **Desacoplamiento**: El cliente Meta NO conoce la base de datos ni hace persistencia, dejando esta tarea a los servicios de dominio de las futuras fases.
+- **Desacoplamiento**: El cliente Meta NO conoce la base de datos ni hace persistencia.
 - **Testing**: Tests unitarios completos con `responses` que no requieren conexión a internet (Mocking).
 
-### Implementado como PoC
-- **Playwright**: `BrowserManager`, `SessionManager`, `AdsSearcher` y `AdsExtractor` existen como prueba de concepto. No son todavia scraper productivo.
-
-### Pendiente
-- **Fase 3**: Adquisicion robusta por navegador y extraccion inicial de anuncios.
-- **Fase 4**: Extraccion de dominios y scraper de landings.
-- **Fase 5**: Scoring de prospectos.
-- **Fase 6**: CRM/exportacion.
-- **Fase 7**: Automatizaciones.
+### Implementado (Fase 3)
+- **Adquisicion por navegador**: Sistema completo de discovery y enrichment desde Meta Ads Library con Playwright.
+- **Discovery**: Extracción de anuncios con landing externa, descripción completa, domain, advertiser_name y ad_library_url construida.
+- **Enrichment**: Extracción de usuarios sociales (Facebook/Instagram) y conteo de seguidores desde el diálogo de detalles.
+- **Sin sesión requerida**: Meta Ads Library funciona sin login de Facebook.
+- **Modo Debug**: Navegador visible, ejecución lenta, logs detallados.
+- **Modo Headless**: Ejecución normal sin intervención visual.
+- **CLI**: Script `run_meta_ads_browser.py` con argumentos configurables.
+- **DTOs**: `BrowserAdDiscovery`, `BrowserAdEnrichment`, `BrowserAdResult` con serialización JSON.
+- **Tests**: 20 tests pasando, `./scripts/check.sh` sin errores.
 
 ## Criterio De Estabilidad
 

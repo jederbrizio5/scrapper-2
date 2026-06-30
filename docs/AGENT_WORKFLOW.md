@@ -20,7 +20,7 @@ Si ya queres ejecutar una fase concreta:
 Estamos en la rama: [nombre-rama].
 Lee README.md y docs/. Vamos a trabajar Fase X: [nombre].
 Antes de editar, identifica archivos existentes relacionados, propone cambios minimos y luego implementa con tests.
-No modifiques fases futuras salvo que sea estrictamente necesario.
+No documentes fases posteriores salvo instruccion explicita de producto.
 Al terminar, ejecuta ./scripts/check.sh y actualiza docs/DECISIONS.md si corresponde.
 ```
 
@@ -57,7 +57,7 @@ Cada fase debe cerrarse con este orden:
 Al terminar una fase, actualizar:
 
 - `docs/PROJECT.md`: estado funcional real.
-- `docs/PHASES.md`: fase completada, fase siguiente y criterios.
+- `docs/PHASES.md`: fase completada, fase actual y criterios.
 - `docs/ARCHITECTURE.md`: solo si cambio estructura o flujo.
 - `docs/TESTING.md`: si se agregaron comandos, fixtures o tipos de tests.
 - `docs/DECISIONS.md`: si hubo una decision tecnica relevante.
@@ -66,9 +66,7 @@ Al terminar una fase, actualizar:
 
 ## Regla De Alcance
 
-No mezclar fases.
-
-Ejemplo: en Fase 3 se puede crear extraccion de dominios y tests. No se debe implementar scoring, CRM o automatizaciones.
+No mezclar fases. Trabajar solo el alcance indicado por producto.
 
 ## Fase 3 Recomendada
 
@@ -89,38 +87,5 @@ Reglas clave:
 - logs claros.
 - tests mockeados.
 - modo visible/headless configurable.
-- no mezclar con scoring ni CRM.
-
-## Fase 4 Recomendada
-
-Objetivo: extraer dominios y visitar landings.
-
-Entrada:
-
-- DTOs de anuncios obtenidos por navegador.
-
-Salida:
-
-- dominios normalizados.
-- informacion basica de landing.
-- datos candidatos para `Company`.
-
-Salida:
-
-- datos para `Company` y futuras senales de scoring.
-
-Regla: usar HTTP simple primero para landings; Playwright solo como fallback cuando haga falta renderizado.
-
-## Fase 5 Recomendada
-
-Objetivo: calcular score de prospectos con reglas deterministicas iniciales.
-
-Entrada:
-
-- empresa, dominio y senales de landing.
-
-Salida:
-
-- `Lead` con `score` y `estado`.
-
-Regla: no usar IA para scoring hasta tener datos confiables y criterios manuales validados.
+- discovery rapido desde listado.
+- enriquecimiento posterior desde detalles solo cuando haga falta.
