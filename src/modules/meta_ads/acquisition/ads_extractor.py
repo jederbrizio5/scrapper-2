@@ -1,4 +1,5 @@
 import logging
+import random
 import re
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
@@ -105,9 +106,16 @@ class AdsExtractor:
         "FB.COM",
     )
 
+    JITTER_RATIO = 0.3
+
     def __init__(self, page: Page, action_delay_ms: int = 1200):
         self.page = page
         self.action_delay_ms = action_delay_ms
+
+    def _jittered_delay(self, base_ms: int | None = None) -> int:
+        base = base_ms if base_ms is not None else self.action_delay_ms
+        jitter = int(base * self.JITTER_RATIO * random.random())
+        return base + jitter
 
     def extract_first_ad(self) -> Ad | None:
         """Mantiene compatibilidad con la PoC anterior devolviendo un DTO generico."""
@@ -297,7 +305,7 @@ class AdsExtractor:
                 return BrowserAdEnrichment(library_id=library_id)
 
             button.click(timeout=5000, force=True)
-            self.page.wait_for_timeout(self.action_delay_ms)
+            self.page.wait_for_timeout(self._jittered_delay())
 
             btn_text = self._safe_inner_text(button).strip()
             if "resumen" in btn_text.lower():
@@ -375,7 +383,7 @@ class AdsExtractor:
                     btn_text = self._safe_inner_text(btn).strip()
                     if "detalles del anuncio" in btn_text.lower():
                         btn.click(timeout=5000, force=True)
-                        self.page.wait_for_timeout(self.action_delay_ms + 2000)
+                        self.page.wait_for_timeout(self._jittered_delay() + 2000)
                         detail = self._find_detail_dialog(exclude_id=summary_id)
                         if detail:
                             return detail

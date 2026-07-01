@@ -1,4 +1,5 @@
 import logging
+import time
 
 from src.modules.meta_ads.acquisition.ads_extractor import AdsExtractor
 from src.modules.meta_ads.acquisition.ads_searcher import AdsSearcher
@@ -45,14 +46,16 @@ class MetaAdsBrowserRunner:
 
         Incluye scroll para cargar más anuncios y filtrado por dominios únicos.
         """
+        start_time = time.perf_counter()
         results: list[BrowserAdResult] = []
 
-        with BrowserManager(
+        bm = BrowserManager(
             headless=self.headless,
             debug_mode=self.debug_mode,
             slow_mo_ms=self.slow_mo_ms,
-        ) as browser:
-            session_manager = SessionManager(browser)
+        )
+        with bm as browser:
+            session_manager = SessionManager(browser, user_agent=bm.user_agent)
             page = session_manager.create_session()
 
             try:
@@ -83,6 +86,10 @@ class MetaAdsBrowserRunner:
             finally:
                 session_manager.close_session()
 
+        elapsed = time.perf_counter() - start_time
+        logger.info(
+            "Ejecucion completada en %.1fs total_results=%s", elapsed, len(results)
+        )
         return results
 
     def _collect_discoveries_with_scroll(

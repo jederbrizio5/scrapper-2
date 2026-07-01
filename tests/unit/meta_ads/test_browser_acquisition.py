@@ -2,7 +2,10 @@ from unittest.mock import MagicMock, patch
 
 from src.modules.meta_ads.acquisition.ads_extractor import AdsExtractor
 from src.modules.meta_ads.acquisition.ads_searcher import AdsSearcher
-from src.modules.meta_ads.browser.browser_manager import BrowserManager
+from src.modules.meta_ads.browser.browser_manager import (
+    ANTI_DETECTION_ARGS,
+    BrowserManager,
+)
 from src.modules.meta_ads.dto import Ad, BrowserAdDiscovery, BrowserAdResult
 
 
@@ -18,7 +21,7 @@ def test_browser_manager(mock_sync_playwright):
     browser = manager.start()
     assert browser == mock_browser
     mock_playwright_instance.chromium.launch.assert_called_once_with(
-        headless=True, slow_mo=0, args=["--disable-blink-features=AutomationControlled"]
+        headless=True, slow_mo=0, args=ANTI_DETECTION_ARGS
     )
 
     manager.stop()
