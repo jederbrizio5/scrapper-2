@@ -94,7 +94,9 @@ class AdsExtractor:
         "Este anuncio tiene varias versiones",
         "Este anuncio tiene",
         "Chatea en Messenger",
+        "Chatea con nosotros",
         "Send Message",
+        "Send WhatsApp Message",
         "Chat on Messenger",
         "Call Now",
         "Llamar ahora",
@@ -109,6 +111,7 @@ class AdsExtractor:
         "Comprar",
         "Reserva tu plaza",
         "Reservar",
+        "Visita el sitio web",
         "<100",
         "0:00",
         "anuncios usan este contenido",
@@ -593,16 +596,43 @@ class AdsExtractor:
             return
 
     def _extract_landing_url(self, card: ElementHandle) -> str | None:
-        anchors = card.query_selector_all("a[href]")
-        for anchor in anchors:
+        all_anchors = card.query_selector_all("a[href]")
+
+        if any(self._is_engagement_href(anchor) for anchor in all_anchors):
+            return None
+
+        button_links = card.query_selector_all("button a[href], [role=button] a[href]")
+        for anchor in button_links:
             href = anchor.get_attribute("href")
             if not href:
                 continue
+            normalized = self._normalize_url(href)
+            if normalized and self._is_external_landing(normalized):
+                return normalized
 
+        for anchor in all_anchors:
+            href = anchor.get_attribute("href")
+            if not href:
+                continue
             normalized = self._normalize_url(href)
             if normalized and self._is_external_landing(normalized):
                 return normalized
         return None
+
+    @staticmethod
+    def _is_engagement_href(anchor: ElementHandle) -> bool:
+        href = (anchor.get_attribute("href") or "").lower()
+        for pattern in (
+            "wa.me",
+            "wa.link",
+            "whatsapp.com",
+            "m.me",
+            "messenger.com",
+            "tel:",
+        ):
+            if pattern in href:
+                return True
+        return False
 
     def _extract_library_id(self, text: str) -> str | None:
         patterns = [
@@ -692,6 +722,8 @@ class AdsExtractor:
 
         return None
 
+    _DISPLAY_URL_RE = re.compile(r"^[A-Z][A-Z0-9./-]{2,59}$")
+
     def _extract_ad_description(
         self, text: str, *, advertiser_name: str | None = None
     ) -> str | None:
@@ -699,6 +731,9 @@ class AdsExtractor:
 
         Busca el contenido publicitario que aparece después del
         identificador de la biblioteca, excluyendo ruido de la UI.
+        Corta en cuanto detecta una línea propia del footer
+        (display URL, página, etc.) para no arrastrar secciones
+        posteriores del card.
         """
         lines = [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -725,10 +760,8 @@ class AdsExtractor:
                 re.IGNORECASE,
             ):
                 continue
-            if line.startswith("http"):
-                continue
-            if line.startswith("www."):
-                continue
+            if self._contains_url(line):
+                break
             if re.match(
                 r"^\d+\s*(millones|mill|mil|k|m)?\s*seguidores", line, re.IGNORECASE
             ):
@@ -739,6 +772,10 @@ class AdsExtractor:
                 continue
             if "anuncios usan este contenido" in line.lower():
                 continue
+            if self._DISPLAY_URL_RE.match(line) and "." in line:
+                break
+            if re.search(r"\d+%\s*(OFF|off|desc|Dto|Dto\.)", line):
+                break
             ad_lines.append(line)
 
         if not ad_lines:
@@ -882,6 +919,18 @@ class AdsExtractor:
 
     def _domain_from_url(self, url: str) -> str:
         return urlparse(url).netloc.lower().removeprefix("www.")
+
+    @staticmethod
+    def _contains_url(line: str) -> bool:
+        stripped = line.lstrip()
+        if not stripped:
+            return False
+        first_word = stripped.split()[0].lower()
+        if first_word.startswith("http"):
+            return True
+        if first_word.startswith("www."):
+            return True
+        return False
 
     def _safe_inner_text(self, element: ElementHandle) -> str:
         try:

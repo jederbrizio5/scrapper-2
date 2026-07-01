@@ -67,3 +67,38 @@
 - **Contexto**: Algunos anuncios muestran un diálogo de resumen que requiere un clic adicional en "Ver detalles del anuncio" para acceder a la información completa del anunciante.
 - **Decisión**: Implementar `_enter_from_summary()` que detecta el diálogo de resumen, clickea "Ver detalles del anuncio" interno, y busca el diálogo de detalles resultante. Se excluye el diálogo de resumen de la búsqueda posterior para evitar confusión.
 - **Consecuencias**: Enriquecimiento exitoso para anuncios que muestran resumen en lugar de detalles directos.
+
+## 2026-07-01: Anti-bloqueo con User-Agent, webdriver override y jitter
+- **Contexto**: Meta Ads Library detecta automatización por `navigator.webdriver`, User-Agent de Playwright por defecto, viewport fijo y patrones de interacción determinísticos.
+- **Decisión**: Agregar `REALISTIC_USER_AGENT` (Chrome 125 Windows), `--disable-blink-features=AutomationControlled` en args, `add_init_script` con override de `navigator.webdriver`/`plugins`/`languages`/`chrome.runtime`, viewport ±20px, extra HTTP headers, y `_jittered_delay()` con ±30% en todos los `wait_for_timeout`.
+- **Consecuencias**: Menor probabilidad de bloqueo por Meta. Sin cambios estructurales en el flujo de extracción.
+
+## 2026-07-01: `_parse_followers_count` con float math en vez de string concat
+- **Contexto**: "275,7 mil" se parseaba como "2757" + "000" = "2757000" en vez de `275.7 * 1000 = 275700`. La coma decimal se ignoraba.
+- **Decisión**: Reescribir `_parse_followers_count` para usar `float()` con coma→punto, eliminar separador de miles (punto seguido de 3 dígitos), y multiplicar por factor 1000/1000000.
+- **Consecuencias**: "275,7 mil" → 275700, "1,4 mill" → 1400000, "1.473 mil" → 1473000.
+
+## 2026-07-01: Advertiser name con backward search
+- **Contexto**: `_extract_advertiser_name` buscaba líneas después del library ID, lo que seleccionaba "Transparencia de la UE" o "X anuncios usan este contenido" como nombre del anunciante.
+- **Decisión**: Primero buscar hacia atrás desde el library ID (el nombre real está antes), luego fallback forward. Agregar "Transparencia" a `skip_prefixes`. Agregar `_is_valid_name()` con check de "anuncios usan este contenido".
+- **Consecuencias**: Nombres de anunciante correctos en todos los casos observados.
+
+## 2026-07-01: Engagement CTA detection sobre todos los anchors
+- **Contexto**: Anuncios con CTA a WhatsApp tenían landing URL de texto secundario. El ad se aceptaba incorrectamente.
+- **Decisión**: En `_extract_landing_url`, escanear TODOS los `<a href>` de la card para patrones `wa.me`/`whatsapp.com`/`m.me`/`tel:`. Si existe alguno, return None. Además, priorizar `<a>` dentro de botones CTA antes que cualquier otro anchor. Solo hacer fallback a texto si no hay botones.
+- **Consecuencias**: Anuncios WhatsApp son descartados. Landing URLs vienen de botones CTA no de texto.
+
+## 2026-07-01: BREAK en descripción al detectar URL/display/oferta
+- **Contexto**: La descripción incluía display URLs como "CEFOMIN.CL", URLs con emoji como "📌 http://...", y ofertas como "15% OFF" del footer del card.
+- **Decisión**: Agregar `_DISPLAY_URL_RE` (mayúsculas + punto) con BREAK, `_contains_url()` que detecta http/www incluso con prefijo emoji con BREAK, y `\d+% (OFF|desc)` con BREAK. Case-insensitive para "HTTPS://...".
+- **Consecuencias**: Descripciones sin footer del card. Corta en la primera línea de footer, sin arrastrar contenido posterior.
+
+## 2026-07-01: UI_NOISE_LINES expandido
+- **Contexto**: Textos de botones como "Chatea con nosotros", "Send WhatsApp Message", "Visita el sitio web" aparecían en la descripción.
+- **Decisión**: Agregar ~10 líneas nuevas a `UI_NOISE_LINES`: "Chatea con nosotros", "Send WhatsApp Message", "Visita el sitio web", "Registrarse", "Sign Up", "Shop Now", "Learn More", "See Details", "Comprar", "Reserva tu plaza", "Contact Us".
+- **Consecuencias**: Descripciones más limpias sin texto de botones de interfaz.
+
+## 2026-07-01: doc.phase.3.md — documento de algoritmo para IA
+- **Contexto**: No existía documentación detallada del algoritmo de adquisición para que otra IA pueda entender y continuar el desarrollo.
+- **Decisión**: Crear `docs/doc.phase.3.md` con 14 secciones: arquitectura completa, anti-detección, flujos de discovery y enrichment, 12 errores corregidos, limitaciones, decisiones de diseño, diagramas de flujo.
+- **Consecuencias**: Cualquier agente futuro puede comprender el sistema sin leer el código fuente completo.

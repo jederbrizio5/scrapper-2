@@ -39,6 +39,21 @@ Fase 0, Fase 1, Fase 2 y Fase 3 estan completadas y estabilizadas.
 - **Modo Headless**: Ejecución normal sin intervención visual.
 - **CLI**: Script `run_meta_ads_browser.py` con argumentos configurables.
 - **DTOs**: `BrowserAdDiscovery`, `BrowserAdEnrichment`, `BrowserAdResult` con serialización JSON.
+- **12+ correcciones**:
+  - `ig.me` agregado a `BLOCKED_DOMAINS`
+  - `advertiser_name` con backward search (evita "Transparencia de la UE")
+  - Followers con "mill" (millones) soportado (×1.000.000)
+  - Decimal comma + "mil" con float math (275,7 mil → 275700)
+  - Descripción sin botones/nav (~30 líneas en `UI_NOISE_LINES`)
+  - Display URLs cortadas (BREAK en `CEFOMIN.CL`, `DAXUS.COM/...`)
+  - URLs mayúscula/emoji detectadas (`HTTPS://`, `📌 http://`)
+  - WhatsApp CTAs descartados (engagement href en TODOS los anchors)
+  - Landing URL desde botón CTA, no desde texto
+  - Ofertas porcentuales cortadas (`15% OFF` → BREAK)
+  - CTA text filtrado ("Visita el sitio web", "Chatea con nosotros")
+  - Anti-bloqueo: 9 flags, User-Agent realista, webdriver override, jitter
+- **Anti-detección**: 9 flags Chromium, User-Agent Chrome 125, `navigator.webdriver` override, viewport jitter ±20px, headers realistas, jitter ±30% en delays.
+- **Documentación de algoritmo**: `docs/doc.phase.3.md` con 14 secciones, 12 errores corregidos, diagramas de flujo.
 - **Tests**: 20 tests pasando, `./scripts/check.sh` sin errores.
 
 ## Criterio De Estabilidad

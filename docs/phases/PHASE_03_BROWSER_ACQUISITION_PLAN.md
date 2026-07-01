@@ -183,13 +183,20 @@ Ejecución headless procesando múltiples keywords con límite de anuncios váli
 
 - Soporte para modo debug con navegador visible
 - Slow motion configurable
-- Argumento `--disable-blink-features=AutomationControlled`
+- 9 argumentos anti-detección (incluye `--disable-blink-features=AutomationControlled`)
+- User-Agent realista Chrome 125 Windows (`REALISTIC_USER_AGENT`)
 - Logs detallados en modo debug
 
 ## SessionManager (`src/modules/meta_ads/browser/session_manager.py`)
 
 - Creación de contexto y página
 - Sin lógica de login (no requerido)
+- `navigator.webdriver` → `undefined` via `add_init_script`
+- `navigator.plugins` simulado (5 elementos)
+- `navigator.languages` → `['es-ES', 'es', 'en']`
+- `chrome.runtime` → objeto vacío
+- Viewport con jitter ±20px
+- Extra HTTP headers realistas
 
 ## AdsSearcher (`src/modules/meta_ads/acquisition/ads_searcher.py`)
 
@@ -202,10 +209,16 @@ Ejecución headless procesando múltiples keywords con límite de anuncios váli
 - Extracción de discovery desde cards
 - Extracción de enrichment desde diálogo de detalles
 - Parsing de usuarios sociales (FB/IG)
-- Parsing de seguidores con soporte "mil"
+- Parsing de seguidores con soporte "mil" y "mill" (float math)
 - Manejo de "Ver detalles del resumen"
-- Filtrado de dominios bloqueados
-- Extracción de advertiser_name limpia
+- Filtrado de dominios bloqueados (incluye `ig.me`)
+- Extracción de advertiser_name limpia (backward search first)
+- **Engagement CTA detection**: escanea todos los `<a href>` de la card en busca de WhatsApp/Messenger/tel
+- **Landing URL desde botón CTA**: prioriza `<a>` dentro de botones, fallback a texto solo si no hay botones
+- **Descripción con BREAK**: corta en display URL (`CEFOMIN.CL`), URL con emoji (`📌 http://`), oferta porcentual (`15% OFF`)
+- **UI_NOISE_LINES**: ~30 líneas de ruido de interfaz filtradas (botones, WhatsApp, CTA, Meta UI)
+- **Display URL regex**: `^[A-Z][A-Z0-9./-]{2,59}$` con BREAK
+- **Anti-bloqueo**: `_jittered_delay()` con ±30% aleatorio
 
 ## MetaAdsBrowserRunner (`src/modules/meta_ads/acquisition/browser_runner.py`)
 
@@ -295,3 +308,24 @@ La fase se ha completado con éxito. Todos los criterios de aceptación se cumpl
 10. **Modo Debug**: Navegador visible, ejecución lenta, logs detallados
 11. **Modo Headless**: Ejecución normal sin intervención visual
 12. **Tests**: 20 tests pasan exitosamente, `./scripts/check.sh` sin errores
+
+---
+
+# Correcciones Posteriores
+
+Las siguientes correcciones se aplicaron después de la implementación inicial de Fase 3, basadas en errores observados en ejecuciones reales:
+
+| # | Corrección | Archivo | Líneas |
+|---|------------|---------|--------|
+| 1 | `ig.me` agregado a `BLOCKED_DOMAINS` | `ads_extractor.py` | 57 |
+| 2 | Advertiser name con backward search + `_is_valid_name()` + "Transparencia" en skip_prefixes | `ads_extractor.py` | 661-723 |
+| 3 | "mill" (millones) soportado en followers regex | `ads_extractor.py` | 445-448 |
+| 4 | `_parse_followers_count` con float math (coma decimal → punto, miles removido) | `ads_extractor.py` | 436-471 |
+| 5 | `UI_NOISE_LINES` expandido (~10 líneas: botones, WhatsApp, CTA) | `ads_extractor.py` | 70-121 |
+| 6 | `_DISPLAY_URL_RE` con BREAK (detecta `CEFOMIN.CL`, `DAXUS.COM/...`) | `ads_extractor.py` | 725, 775-776 |
+| 7 | `_contains_url()` case-insensitive + emoji prefix (detecta `HTTPS://`, `📌 http://`) | `ads_extractor.py` | 923-933 |
+| 8 | Engagement CTA detection sobre TODOS los anchors (wa.me, whatsapp.com, m.me, tel:) | `ads_extractor.py` | 598-635 |
+| 9 | Landing URL desde botón CTA primero (button a[href]), fallback solo sin botones | `ads_extractor.py` | 598-620 |
+| 10 | BREAK en `\d+% (OFF|desc|Dto)` para ofertas promocionales | `ads_extractor.py` | 777-778 |
+| 11 | "Visita el sitio web", "Chatea con nosotros", "Send WhatsApp Message" en noise | `ads_extractor.py` | 97, 99, 114 |
+| 12 | `REALISTIC_USER_AGENT`, 9 anti-detection args, webdriver override, jitter ±30% | `browser_manager.py`, `session_manager.py`, `ads_extractor.py` | — |

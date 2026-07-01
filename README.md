@@ -33,6 +33,30 @@ Para ejecutar sin enriquecimiento (solo discovery):
 
 El resultado queda en `output/meta_ads_browser_results.json`. Para depurar visualmente, ejecutar sin `--headless`.
 
+### Características implementadas en Fase 3
+
+- **Anti-detección**: 9 flags Chromium, User-Agent Chrome 125 realista,
+  `navigator.webdriver` override, viewport jitter, headers HTTP realistas,
+  jitter ±30% en delays.
+- **Landing URL desde botón CTA**: Prioriza `<a>` dentro de botones; solo
+  cae a texto si no hay botones.
+- **Engagement CTA detection**: Si cualquier `<a>` en la card apunta a
+  WhatsApp/Messenger/tel, el anuncio se descarta automáticamente.
+- **Descripción limpia**: Filtra ruido de UI (~30 líneas de noise), URLs
+  (con o sin emoji), display URLs (`CEFOMIN.CL`), ofertas porcentuales;
+  corta recolección (BREAK) al detectar footer.
+- **Advertiser name**: Búsqueda backward desde library_id primero (evita
+  falsos como "Transparencia de la UE"), fallback forward.
+- **Enrichment**: Abre el diálogo de detalles, expande sección del
+  anunciante, extrae usuarios FB/IG y seguidores con parseo de formato
+  español (coma decimal, "mil"/"mill", punto separador).
+- **Scroll**: Extrae más cards mediante scroll, filtra por dominio único
+  (solo 1 resultado por dominio por ejecución).
+- **Timing**: Log por keyword y total con `time.perf_counter()`.
+- **12+ correcciones**: `ig.me` bloqueado, followers con "mill",
+  decimal comma + "mil" con float math, descripción sin botones/nav,
+  sin display URLs, sin URLs con emoji, sin WhatsApp CTAs falsas.
+
 ## Testing
 Para correr la suite de tests (unitarios y de integración):
 
