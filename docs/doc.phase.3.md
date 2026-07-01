@@ -258,3 +258,34 @@ Ejecutar: `./scripts/check.sh` (lint + format + tests).
 4. **Las keywords usadas ("curso", "masterclass") pueden tener baja densidad de anuncios con landing externa.** Keywords más transaccionales pueden rendir mejor.
 
 5. **El orden `relevancy_monthly_grouped` no prioriza anuncios con landing.** Cambiar a `sort_data[mode]=created_time_desc` podría mostrar más variedad.
+
+---
+
+## 10. Medidas Antibloqueo Implementadas
+
+### BrowserManager
+- User-Agent realista: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36`
+- 9 flags anti-detección: `--disable-blink-features=AutomationControlled`, `--disable-features=IsolateOrigins,site-per-process`, `--disable-session-crashed-bubble`, `--disable-crash-reporter`, `--no-first-run`, `--no-default-browser-check`, `--no-sandbox`, `--disable-infobars`, `--disable-gpu`, `--disable-dev-shm-usage`
+
+### SessionManager
+- Override de `navigator.webdriver` via `page.add_init_script`
+- Override de `navigator.plugins` y `navigator.languages`
+- Viewport con jitter aleatorio de ±20px
+- Headers HTTP realistas (Accept-Language, Accept)
+
+### AdsExtractor
+- `_jittered_delay()`: ±30% aleatorio sobre cada `wait_for_timeout`
+- Tiempos de espera no fijos para evitar fingerprinting
+
+---
+
+## 11. Errores Conocidos Corregidos
+
+| Error | Síntoma | Fix |
+|-------|---------|-----|
+| `ig.me` no bloqueado | landing apuntaba a ig.me | Agregado a `BLOCKED_DOMAINS` |
+| advertiser_name incorrecto | Mostraba "Transparencia de la UE", "Domina ChatGPT..." | Búsqueda hacia atrás (antes del library_id), "Transparencia" en skip_prefixes |
+| "mill" no soportado | "1,4 mill. seguidores" → `.` | Regex ahora acepta `mill` y multiplica por 1.000.000 |
+| Decimal comma mal parseado | "275,7 mil" → "2757000" | Conversión correcta: coma decimal → punto → float → 275700 |
+| Botones en descripción | "Registrarse", "Learn More", "See Details" incluidos | Agregados a `UI_NOISE_LINES` |
+| "X anuncios usan..." en advertiser/desc | "2 anuncios usan este contenido..." como nombre | Filtro `in` en vez de `startswith` para este patrón |

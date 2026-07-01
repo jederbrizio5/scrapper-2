@@ -67,6 +67,7 @@ class MetaAdsBrowserRunner:
                 )
 
                 for keyword in keywords:
+                    keyword_start = time.perf_counter()
                     logger.info("Iniciando keyword=%s", keyword)
                     searcher.search(keyword)
 
@@ -81,6 +82,14 @@ class MetaAdsBrowserRunner:
                         results.extend(
                             BrowserAdResult(discovery=d) for d in discoveries
                         )
+
+                    kw_elapsed = time.perf_counter() - keyword_start
+                    logger.info(
+                        "Keyword completada keyword=%s tiempo=%.1fs resultados=%s",
+                        keyword,
+                        kw_elapsed,
+                        len(discoveries),
+                    )
                     page.wait_for_timeout(self.action_delay_ms)
 
             finally:

@@ -54,6 +54,7 @@ class AdsExtractor:
         "bit.ly",
         "tinyurl.com",
         "goo.gl",
+        "ig.me",
     )
 
     DETAIL_BUTTON_TEXTS = (
@@ -85,6 +86,7 @@ class AdsExtractor:
         "Impresiones:",
         "Impresiones: ",
         "Transparencia UE",
+        "Transparencia de la",
         "Contenido de marca",
         "Publicidad",
         "Patrocinado",
@@ -96,10 +98,19 @@ class AdsExtractor:
         "Chat on Messenger",
         "Call Now",
         "Llamar ahora",
+        "Registrarse",
+        "Sign Up",
+        "Shop Now",
+        "Learn More",
+        "See Details",
+        "Obtener oferta",
+        "Obtener oferta",
+        "Contact Us",
+        "Comprar",
+        "Reserva tu plaza",
+        "Reservar",
         "<100",
         "0:00",
-        "2 anuncios usan este contenido y texto",
-        "3 anuncios usan este contenido y texto",
         "anuncios usan este contenido",
         "Ir al perfil",
         "API.WHATSAPP.COM",
@@ -421,15 +432,40 @@ class AdsExtractor:
 
     @staticmethod
     def _parse_followers_count(raw: str) -> str:
+        """Convierte texto de seguidores a numero.
+
+        Maneja formatos:
+          "1260" -> "1260"
+          "2,1 mil" -> "2100"       (decimal comma + mil)
+          "229,4 mil" -> "229400"
+          "1,4 mill" -> "1400000"   (decimal comma + mill = millones)
+          "159 mil" -> "159000"
+          "275,7 mil" -> "275700"
+          "1.473 mil" -> "1473000"  (dot thousands separator + mil)
+        """
         has_mil = "mil" in raw.lower()
-        cleaned = raw.replace(".", "").replace(",", "")
-        m = re.search(r"(\d+)", cleaned)
+        has_mill = "mill" in raw.lower()
+
+        cleaned = raw.strip()
+        cleaned = re.sub(r"\s*(?:mil|mill)[^a-z]*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
+
+        # Spanish decimal comma -> dot
+        cleaned = cleaned.replace(",", ".")
+        # Remove thousands separator dots (followed by exactly 3 digits)
+        cleaned = re.sub(r"\.(\d{3})", r"\1", cleaned)
+
+        m = re.search(r"[\d.]+", cleaned)
         if not m:
             return raw
-        num = m.group(1)
+
+        num_str = m.group(0)
+
+        if has_mill:
+            return str(int(float(num_str) * 1000000))
         if has_mil:
-            num = num + "000"
-        return num
+            return str(int(float(num_str) * 1000))
+        return str(int(float(num_str)))
 
     def _parse_social_from_advertiser_section(
         self, text: str
@@ -487,7 +523,9 @@ class AdsExtractor:
                 continue
 
             followers_match = re.search(
-                r"([\d\.,]+(?:\s*mil)?)\s*seguidores", stripped, re.IGNORECASE
+                r"([\d\.,]+(?:\s*(?:mil|mill)[^\d]*)?)\s*seguidores",
+                stripped,
+                re.IGNORECASE,
             )
             if followers_match:
                 raw = followers_match.group(1)
@@ -593,9 +631,8 @@ class AdsExtractor:
     def _extract_advertiser_name(self, text: str) -> str | None:
         """Extrae el nombre del anunciante desde el texto del card.
 
-        El nombre del anunciante aparece típicamente como la primera línea
-        significativa del card después del Library ID, antes del contenido
-        del anuncio.
+        El nombre del anunciante aparece típicamente antes del
+        Identificador de la biblioteca.
         """
         lines = [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -617,87 +654,41 @@ class AdsExtractor:
             "Sistema",
             "Todos",
             "API",
+            "Transparencia",
         )
 
-        if library_id_idx >= 0:
-            for line in lines[library_id_idx + 1 :]:
-                if self._is_noise_line(line):
-                    continue
-                if len(line) < 3 or len(line) > 100:
-                    continue
-                if re.match(r"^\d+$", line):
-                    continue
-                if any(line.startswith(p) for p in skip_prefixes):
-                    continue
-                if line.startswith("http"):
-                    continue
-                if line.startswith("www."):
-                    continue
-                if any(kw in line.lower() for kw in self.SOCIAL_DOMAIN_KEYWORDS):
-                    continue
-                if re.match(
-                    r"^\d+\s*(mil|millones|k|m)?\s*seguidores",
-                    line,
-                    re.IGNORECASE,
-                ):
-                    continue
-                ad_content_words = [
-                    "curso",
-                    "aprende",
-                    "inscríbete",
-                    "inscribete",
-                    "clases",
-                    "certificado",
-                    "diplomado",
-                    "taller",
-                    "capacitación",
-                    "capacitacion",
-                    "seminario",
-                    "¡",
-                    "¿",
-                    "🎉",
-                    "✨",
-                    "📚",
-                    "🎓",
-                    "online",
-                    "presencial",
-                    "virtual",
-                    "grabación",
-                    "obtener",
-                    "enviar",
-                    "llamar",
-                    "contacto",
-                ]
-                line_lower = line.lower()
-                if any(word in line_lower for word in ad_content_words):
-                    continue
-                if len(line.split()) > 8:
-                    continue
-                return line
+        def _is_valid_name(candidate: str) -> bool:
+            if self._is_noise_line(candidate):
+                return False
+            if len(candidate) < 3 or len(candidate) > 100:
+                return False
+            if re.match(r"^\d+$", candidate):
+                return False
+            if any(candidate.startswith(p) for p in skip_prefixes):
+                return False
+            if candidate.startswith("http") or candidate.startswith("www."):
+                return False
+            if any(kw in candidate.lower() for kw in self.SOCIAL_DOMAIN_KEYWORDS):
+                return False
+            if re.match(
+                r"^\d+\s*(millones|mill|mil|k|m)?\s*seguidores",
+                candidate,
+                re.IGNORECASE,
+            ):
+                return False
+            if "anuncios usan este contenido" in candidate.lower():
+                return False
+            return True
 
-        for i, line in enumerate(lines):
-            if "Identificador de la biblioteca" in line or "Library ID" in line:
-                for j in range(max(0, i - 5), i):
-                    candidate = lines[j]
-                    if self._is_noise_line(candidate):
-                        continue
-                    if len(candidate) < 3 or len(candidate) > 100:
-                        continue
-                    if re.match(r"^\d+$", candidate):
-                        continue
-                    if any(candidate.startswith(p) for p in skip_prefixes):
-                        continue
-                    if candidate.startswith("http"):
-                        continue
-                    if candidate.startswith("www."):
-                        continue
-                    if re.match(
-                        r"^\d+\s*(mil|millones|k|m)?\s*seguidores",
-                        candidate,
-                        re.IGNORECASE,
-                    ):
-                        continue
+        if library_id_idx >= 0:
+            for j in range(library_id_idx - 1, -1, -1):
+                candidate = lines[j]
+                if _is_valid_name(candidate):
                     return candidate
+
+            for line in lines[library_id_idx + 1 :]:
+                if _is_valid_name(line):
+                    return line
 
         return None
 
@@ -739,12 +730,14 @@ class AdsExtractor:
             if line.startswith("www."):
                 continue
             if re.match(
-                r"^\d+\s*(mil|millones|k|m)?\s*seguidores", line, re.IGNORECASE
+                r"^\d+\s*(millones|mill|mil|k|m)?\s*seguidores", line, re.IGNORECASE
             ):
                 continue
             if advertiser_name and line.strip() == advertiser_name:
                 continue
             if line.upper() in ("FB.COM", "API.WHATSAPP.COM"):
+                continue
+            if "anuncios usan este contenido" in line.lower():
                 continue
             ad_lines.append(line)
 
@@ -846,7 +839,7 @@ class AdsExtractor:
         sections = re.split(r"\n{2,}", text)
         for section in sections:
             lower = section.lower()
-            pattern = r"([\d\.,]+\s*(?:mil|millones|k|m)?\s*seguidores)"
+            pattern = r"([\d\.,]+\s*(?:millones|mill|mil|k|m)?\s*seguidores)"
             match = re.search(pattern, section, flags=re.IGNORECASE)
             if not match:
                 continue
