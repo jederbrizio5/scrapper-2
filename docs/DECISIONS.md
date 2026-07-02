@@ -102,3 +102,48 @@
 - **Contexto**: No existía documentación detallada del algoritmo de adquisición para que otra IA pueda entender y continuar el desarrollo.
 - **Decisión**: Crear `docs/doc.phase.3.md` con 14 secciones: arquitectura completa, anti-detección, flujos de discovery y enrichment, 12 errores corregidos, limitaciones, decisiones de diseño, diagramas de flujo.
 - **Consecuencias**: Cualquier agente futuro puede comprender el sistema sin leer el código fuente completo.
+
+## 2026-07-02: Sesión nueva por keyword (prevención OOM)
+- **Contexto**: El navegador acumulaba DOM de todas las keywords en una sola página/sesión, llevando a OOM (Out of Memory) en ejecuciones largas. Además, la EPIPE observada en logs era en realidad SIGTERM del tool bash por timeout, no del navegador.
+- **Decisión**: Crear un nuevo contexto + página por cada keyword. Cerrar el contexto anterior antes de abrir el siguiente. Agregar try/except alrededor de cleanup para evitar que errores menores detengan el proceso. Mantener una sola sesión de navegador (chromium) reutilizable entre keywords.
+- **Consecuencias**: Ejecuciones estables con 4+ keywords. Sin acumulación de DOM. La EPIPE real solo ocurre por timeouts externos (tool bash), no en producción.
+
+## 2026-07-02: Skip library_ids en extractor antes de query_selector_all
+- **Contexto**: Entre scrolls, las cards ya vistas se reprocesaban completamente (`_extract_discovery_from_card` con query_selector_all costoso). Esto desperdiciaba tiempo y recursos.
+- **Decisión**: Extraer el library_id del texto de la card ANTES de llamar a `_extract_discovery_from_card`. Si el library_id ya está en el set `skip_library_ids`, se salta la card inmediatamente. Pasar `skip_library_ids` de la iteración anterior en cada nueva extracción.
+- **Consecuencias**: Reducción drástica de reprocesamiento entre scrolls. Stat `disc_library_id_dup` eliminado (ahora siempre 0). Mejora de rendimiento en keywords con muchos anuncios.
+
+## 2026-07-02: Per-keyword limits con `keyword:limite`
+- **Contexto**: El límite global se aplicaba a todas las keywords por igual, sin posibilidad de asignar más recursos a keywords prioritarias.
+- **Decisión**: Implementar sintaxis `--keyword "nombre:limite"` en CLI. El runner parsea con `rsplit(":", 1)`. Si no hay límite explícito, usa el global (`--limit`). Cada keyword se procesa con su propio límite en `_collect_discoveries_with_scroll`.
+- **Consecuencias**: Control granular de la adquisición. Ej: `--keyword "curso:30" --keyword "curso marketing:100"`.
+
+## 2026-07-02: max_scrolls=0 como scrolls infinitos
+- **Contexto**: El límite de scrolls forzaba a calcular un número fijo que podía ser insuficiente para keywords con muchos anuncios o excesivo para otras.
+- **Decisión**: Si `max_scroll_attempts == 0`, el while loop de scrolls solo corta por objetivo alcanzado o por 3 scrolls vacíos consecutivos. El número fijo es solo un seguro de fondo.
+- **Consecuencias**: Una keyword con 100 anuncios objetivos puede scrollear hasta conseguirlos sin necesidad de adivinar el número de scrolls. Corte natural por agotamiento de resultados.
+
+## 2026-07-02: Checkpoint por keyword + signal handler
+- **Contexto**: Si el proceso moría (Ctrl+C, kill, timeout), se perdían todos los discoveries y enrichments de keywords ya completadas.
+- **Decisión**: Implementar `_save_checkpoint()` que serializa y escribe el JSON completo después de cada keyword. Registrar signal handler para SIGINT y SIGTERM que guarda checkpoint antes de salir. El archivo se reescribe completo (no append de líneas) para consistencia.
+- **Consecuencias**: Máxima pérdida de ~30s si el proceso muere durante una keyword. Datos de keywords completadas siempre a salvo.
+
+## 2026-07-02: Modo enrich-only desde archivo JSON
+- **Contexto**: A veces solo se necesita enriquecer discoveries ya extraídos sin volver a scrollear y descubrir.
+- **Decisión**: Implementar `enrich_from_file(input_path, output_path)` en runner. Lee JSON con discoveries, navega a `ad_library_url` de cada uno, extrae enrichment, guarda resultados. CLI con `--enrich-only <archivo.json>`.
+- **Consecuencias**: Separación clara entre discovery (costoso, requiere scroll) y enrichment (rápido, solo abrir detalles). Se puede hacer discovery una vez y enrichment múltiples veces.
+
+## 2026-07-02: Modo append para retomar ejecuciones
+- **Contexto**: No existía manera de continuar una ejecución anterior. Si se cortaba, había que empezar de cero.
+- **Decisión**: Implementar `--mode append` que carga dominios y library_ids del archivo existente antes de comenzar. `--resume <archivo>` carga de un archivo externo. Ambos sets se combinan como conocidos antes de la primera keyword.
+- **Consecuencias**: Ejecución retomable. Si se agregaron 30 dominios de "curso" y se cortó, al retomar no se repiten esos dominios. También sirve para bloquear dominios de campañas previas (dedup cross-ejecución).
+
+## 2026-07-02: Filtros publisher_platforms + sort_mode probados efectivos
+- **Contexto**: Sin filtros, Meta Ads Library devolvía pocos anuncios con landing externa (~7 dominios únicos para "curso").
+- **Decisión**: Fijar `publisher_platforms=(facebook,instagram)` y `sort_mode=total_impressions` como defaults. Exponer `--sort-mode` en CLI. Mantener `--publisher-platforms` oculto (no cambiar sin evidencia).
+- **Consecuencias**: "curso" pasó de 7 a 30 dominios únicos (4.3x mejora). Los filtros son críticos para densidad de landings.
+
+## 2026-07-02: Bloqueo de dominios extra por CLI
+- **Contexto**: Los dominios bloqueados (`BLOCKED_DOMAINS`) son fijos en la clase. No hay manera de agregar dominios específicos de una campaña sin modificar el código.
+- **Decisión**: Agregar `extra_blocked_domains: set[str] | None = None` a `AdsExtractor.__init__`. Internamente construye `self._blocked_domains = tuple(sorted(set(BLOCKED_DOMAINS) | extra))`. CLI con `--blocked-domains "tiktok.com,x.com"`.
+- **Consecuencias**: Bloqueo ad-hoc sin modificar código fuente. Ideal para campañas que compiten con dominios específicos.

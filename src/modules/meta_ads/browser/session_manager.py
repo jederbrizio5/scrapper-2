@@ -29,14 +29,18 @@ class SessionManager:
     navigator.webdriver, viewport con variación mínima y headers realistas.
     """
 
-    def __init__(self, browser: Browser, user_agent: str | None = None):
+    def __init__(
+        self, browser: Browser, user_agent: str | None = None, proxy: str | None = None
+    ):
         self.browser = browser
         self.user_agent = user_agent
+        self.proxy = proxy
         self.context: BrowserContext | None = None
         self.page: Page | None = None
 
     def create_session(self) -> Page:
-        logger.info("Creando sesion (contexto y pagina)...")
+        proxy_suffix = " via proxy" if self.proxy else ""
+        logger.info("Creando sesion (contexto y pagina)%s...", proxy_suffix)
 
         viewport = {
             "width": BASE_VIEWPORT["width"]
@@ -52,6 +56,8 @@ class SessionManager:
         }
         if self.user_agent:
             context_args["user_agent"] = self.user_agent
+        if self.proxy:
+            context_args["proxy"] = {"server": self.proxy}
 
         self.context = self.browser.new_context(**context_args)
         self.page = self.context.new_page()
@@ -59,8 +65,14 @@ class SessionManager:
         return self.page
 
     def close_session(self) -> None:
-        if self.page:
-            self.page.close()
-        if self.context:
-            self.context.close()
+        try:
+            if self.page:
+                self.page.close()
+        except Exception:
+            logger.debug("Error cerrando page (posible EPIPE)", exc_info=True)
+        try:
+            if self.context:
+                self.context.close()
+        except Exception:
+            logger.debug("Error cerrando context (posible EPIPE)", exc_info=True)
         logger.info("Sesion cerrada.")

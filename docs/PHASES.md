@@ -4,6 +4,7 @@
 * **Fase 1: Base de datos** - Completada.
 * **Fase 2: Cliente Meta Ads y PoC navegador** - Completada.
 * **Fase 3: Adquisicion robusta por navegador** - Completada.
+* **Fase 3.2: Configuracion total, persistencia robusta y enrichment-only** - Completada.
 
 Las fases posteriores no quedan definidas en este documento. Se documentaran cuando producto lo indique.
 
@@ -22,4 +23,5 @@ Los detalles de cada fase viven en `docs/phases/`.
 
 * `docs/phases/PHASE_00_02_STABILIZED.md`: estado actual estabilizado (Fases 0-2).
 * `docs/phases/PHASE_03_BROWSER_ACQUISITION_PLAN.md`: Fase 3 completada — adquisicion por navegador con discovery y enrichment.
+* `docs/phases/PHASE_03_2_CONFIG_PERSIST_ENRICH.md`: Fase 3.2 completada — configuracion total, persistencia robusta y enrichment-only.
 * `docs/phases/TEMPLATE.md`: plantilla obligatoria para nuevas fases.

@@ -79,13 +79,21 @@ class BrowserManager:
         return self._browser
 
     def stop(self) -> None:
-        if self._browser:
-            self._browser.close()
-            logger.info("Navegador cerrado.")
+        try:
+            if self._browser:
+                self._browser.close()
+        except Exception:
+            logger.debug("Error cerrando browser (posible EPIPE)", exc_info=True)
+        finally:
             self._browser = None
+            logger.info("Navegador cerrado.")
 
-        if self._playwright:
-            self._playwright.stop()
+        try:
+            if self._playwright:
+                self._playwright.stop()
+        except Exception:
+            logger.debug("Error deteniendo playwright (posible EPIPE)", exc_info=True)
+        finally:
             self._playwright = None
 
     def __enter__(self) -> Browser:

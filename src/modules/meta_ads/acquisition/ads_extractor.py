@@ -1,7 +1,8 @@
 import logging
 import random
 import re
-from datetime import datetime
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import ElementHandle, Page
@@ -15,6 +16,7 @@ from src.modules.meta_ads.dto import (
     Page as DtoPage,
 )
 
+ARG_TZ = timezone(timedelta(hours=-3))
 logger = logging.getLogger(__name__)
 
 
@@ -122,9 +124,60 @@ class AdsExtractor:
 
     JITTER_RATIO = 0.3
 
-    def __init__(self, page: Page, action_delay_ms: int = 1200):
+    SHORT_URL_DOMAINS = ("bit.ly", "tinyurl.com", "goo.gl")
+
+    _short_url_cache: dict[str, str] = {}
+
+    class MetaBlockedError(Exception):
+        """Meta bloqueo la IP, pide login o detecto automatizacion."""
+
+    def __init__(
+        self,
+        page: Page,
+        action_delay_ms: int = 1200,
+        extra_blocked_domains: set[str] | None = None,
+        action_timeout: int = 30000,
+    ):
         self.page = page
         self.action_delay_ms = action_delay_ms
+        self.action_timeout = action_timeout
+        self.page.set_default_timeout(action_timeout)
+        extra = extra_blocked_domains or set()
+        self._blocked_domains = tuple(sorted(set(self.BLOCKED_DOMAINS) | extra))
+        self.stats = {
+            "cards_found": 0,
+            "cards_processed": 0,
+            "discarded_cta": 0,
+            "discarded_blocked_domain": 0,
+            "discarded_no_landing": 0,
+            "short_urls_resolved": 0,
+        }
+
+    def check_blocked(self):
+        """Detecta si Meta bloqueo la IP o pide login.
+
+        Lanza MetaBlockedError si encuentra sennales en el body.
+        """
+        try:
+            body = self.page.inner_text("body")
+            signals = [
+                "iniciar sesion",
+                "log in",
+                "bloqueado",
+                "blocked",
+                "verifica tu identidad",
+                "confirm your identity",
+                "demasiadas solicitudes",
+                "too many requests",
+            ]
+            for sig in signals:
+                if sig in body.lower():
+                    logger.warning("Meta bloqueo detectado: '%s'", sig)
+                    raise self.MetaBlockedError(f"Meta blocked: '{sig}'")
+        except self.MetaBlockedError:
+            raise
+        except Exception:
+            pass
 
     def _jittered_delay(self, base_ms: int | None = None) -> int:
         base = base_ms if base_ms is not None else self.action_delay_ms
@@ -152,37 +205,62 @@ class AdsExtractor:
         )
 
     def extract_discovery_ads(
-        self, keyword: str, limit: int = 3
+        self,
+        keyword: str,
+        limit: int = 3,
+        skip_library_ids: set[str] | None = None,
     ) -> list[BrowserAdDiscovery]:
-        """Extrae anuncios visibles que tengan una landing externa válida."""
+        """Extrae anuncios visibles que tengan una landing externa válida.
+
+        Args:
+            keyword: Término de búsqueda actual.
+            limit: Máximo de descubrimientos a devolver.
+            skip_library_ids: Conjunto de library_id ya procesados en
+                iteraciones anteriores (scrolls previos). Estos cards se
+                saltan antes de la extracción costosa (query_selector_all).
+        """
+        skip = set(skip_library_ids) if skip_library_ids else set()
         cards = self._candidate_cards()
+        self.stats["cards_found"] += len(cards)
         logger.info("Candidatos encontrados keyword=%s count=%s", keyword, len(cards))
 
         discoveries: list[BrowserAdDiscovery] = []
-        seen_library_ids: set[str] = set()
         for card in cards:
             if len(discoveries) >= limit:
                 break
 
+            text = self._safe_inner_text(card)
+            library_id = self._extract_library_id(text)
+            if not library_id or library_id in skip:
+                continue
+
+            self.stats["cards_processed"] += 1
             discovery = self._extract_discovery_from_card(card, keyword)
             if not discovery:
                 continue
-            if discovery.library_id in seen_library_ids:
-                logger.debug(
-                    "Descartando duplicado library_id=%s", discovery.library_id
-                )
-                continue
 
-            seen_library_ids.add(discovery.library_id)
+            skip.add(discovery.library_id)
             discoveries.append(discovery)
 
         logger.info(
-            "Extraccion discovery finalizada keyword=%s valid_ads=%s requested=%s",
+            "Extraccion discovery finalizada keyword=%s valid_ads=%s requested=%s "
+            "stats=%s",
             keyword,
             len(discoveries),
             limit,
+            self._format_stats(),
         )
         return discoveries
+
+    def _format_stats(self) -> str:
+        return (
+            f"cards_found={self.stats['cards_found']} "
+            f"processed={self.stats['cards_processed']} "
+            f"no_landing={self.stats['discarded_no_landing']} "
+            f"cta={self.stats['discarded_cta']} "
+            f"blocked={self.stats['discarded_blocked_domain']} "
+            f"short_urls={self.stats['short_urls_resolved']}"
+        )
 
     def enrich_ads(
         self, discoveries: list[BrowserAdDiscovery]
@@ -275,15 +353,26 @@ class AdsExtractor:
         if not library_id:
             return None
 
+        had_engagement = any(
+            self._is_engagement_href(a) for a in card.query_selector_all("a[href]")
+        )
+
         landing_url = self._extract_landing_url(card)
         if not landing_url:
+            if had_engagement:
+                self.stats["discarded_cta"] += 1
+            else:
+                self.stats["discarded_no_landing"] += 1
             logger.debug(
                 "Anuncio descartado sin landing externa library_id=%s", library_id
             )
             return None
 
+        landing_url = self._resolve_short_url(landing_url)
+
         domain = self._domain_from_url(landing_url)
         if self._is_blocked_domain(domain):
+            self.stats["discarded_blocked_domain"] += 1
             logger.debug(
                 "Anuncio descartado por dominio bloqueado library_id=%s domain=%s",
                 library_id,
@@ -305,6 +394,7 @@ class AdsExtractor:
             domain=domain,
             ad_library_url=f"https://www.facebook.com/ads/library/?id={library_id}",
             advertiser_name=advertiser_name,
+            extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
         )
 
     def _extract_enrichment_from_card(
@@ -316,7 +406,10 @@ class AdsExtractor:
                 logger.warning(
                     "Boton de detalle no encontrado library_id=%s", library_id
                 )
-                return BrowserAdEnrichment(library_id=library_id)
+                return BrowserAdEnrichment(
+                    library_id=library_id,
+                    extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
+                )
 
             button.click(timeout=5000, force=True)
             self.page.wait_for_timeout(self._jittered_delay())
@@ -332,7 +425,10 @@ class AdsExtractor:
                     "Dialog de detalles no encontrado library_id=%s", library_id
                 )
                 self._close_details()
-                return BrowserAdEnrichment(library_id=library_id)
+                return BrowserAdEnrichment(
+                    library_id=library_id,
+                    extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
+                )
 
             self._click_advertiser_heading(detail_dialog)
             self.page.wait_for_timeout(1500)
@@ -351,13 +447,17 @@ class AdsExtractor:
                 facebook_followers=fb_followers,
                 instagram_followers=ig_followers,
                 advertiser_info=full_text[:2000] if full_text else None,
+                extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
             )
         except Exception as exc:
             logger.warning(
                 "No se pudo enriquecer library_id=%s error=%s", library_id, exc
             )
             self._close_details()
-            return BrowserAdEnrichment(library_id=library_id)
+            return BrowserAdEnrichment(
+                library_id=library_id,
+                extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
+            )
 
     def _find_card_by_library_id(
         self, cards: list[ElementHandle], library_id: str
@@ -907,6 +1007,37 @@ class AdsExtractor:
 
         return parsed._replace(fragment="").geturl()
 
+    def _resolve_short_url(self, url: str) -> str:
+        """Sigue redirecciones para URLs acortadas (bit.ly, tinyurl, goo.gl).
+
+        Usa cache global para evitar resolver la misma URL dos veces.
+        """
+        domain = self._domain_from_url(url)
+        if domain not in self.SHORT_URL_DOMAINS:
+            return url
+
+        cached = self._short_url_cache.get(url)
+        if cached is not None:
+            logger.debug("URL acortada cache %s -> %s", url, cached)
+            return cached
+
+        try:
+            req = urllib.request.Request(
+                url,
+                method="HEAD",
+                headers={"User-Agent": "Mozilla/5.0 (compatible)"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                resolved = resp.url
+                self._short_url_cache[url] = resolved
+                logger.debug("URL acortada resuelta %s -> %s", url, resolved)
+                self.stats["short_urls_resolved"] += 1
+                return resolved
+        except Exception as exc:
+            self._short_url_cache[url] = url
+            logger.debug("No se pudo resolver URL acortada %s error=%s", url, exc)
+            return url
+
     def _is_external_landing(self, url: str) -> bool:
         domain = self._domain_from_url(url)
         return bool(domain) and not self._is_blocked_domain(domain)
@@ -914,7 +1045,7 @@ class AdsExtractor:
     def _is_blocked_domain(self, domain: str) -> bool:
         return any(
             domain == blocked or domain.endswith(f".{blocked}")
-            for blocked in self.BLOCKED_DOMAINS
+            for blocked in self._blocked_domains
         )
 
     def _domain_from_url(self, url: str) -> str:

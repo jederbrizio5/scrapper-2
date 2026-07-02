@@ -48,7 +48,8 @@ Crea un contexto y una pagina con:
 Construye la URL de busqueda con filtros:
 - `active_status=active`, `ad_type=all`, `country=ALL`
 - `content_languages[0]=es`, `search_type=keyword_unordered`
-- `sort_data[mode]=relevancy_monthly_grouped`
+- `sort_data[mode]=total_impressions` (desde Fase 3.2, configurable via CLI)
+- `publisher_platforms[0]=facebook`, `publisher_platforms[1]=instagram`
 
 Navega a la URL y espera 7s (`wait_after_search_ms`) a que carguen resultados.
 
@@ -61,15 +62,19 @@ Clase principal con dos etapas: Discovery y Enrichment.
 Orquestador que:
 1. Inicializa BrowserManager + SessionManager + AdsSearcher + AdsExtractor
 2. Por cada keyword: search -> collect_discoveries_with_scroll -> enrich
-3. Loggea timing por keyword y total
-4. Retorna lista de `BrowserAdResult`
+3. Checkpoint por keyword (guarda JSON tras cada una)
+4. Signal handler para SIGINT/SIGTERM
+5. Modos append/resume para retomar ejecuciones
+6. Modo enrich-only desde archivo JSON
+7. Log de configuracion al inicio y resumen final
+8. Retorna lista de `BrowserAdResult`
 
 ### 2.6 DTOs (`dto/browser_ad.py`)
 
 - `BrowserAdDiscovery`: keyword, library_id, description, circulation_start,
-  landing_url, domain, ad_library_url, advertiser_name
+  landing_url, domain, ad_library_url, advertiser_name, extracted_at
 - `BrowserAdEnrichment`: library_id, facebook_user, instagram_user,
-  facebook_followers, instagram_followers, advertiser_info
+  facebook_followers, instagram_followers, advertiser_info, extracted_at
 - `BrowserAdResult`: discovery + enrichment (ambos opcionales)
 
 ---
@@ -297,9 +302,46 @@ Algoritmo:
 2. Filtra por:
    - **library_id unico** (evita duplicados de cards diferentes)
    - **dominio unico** (solo un resultado por dominio)
-3. Si no alcanza el limite, hace scroll y re-intenta
-4. Si tras scroll no hay nuevos dominios -> corta
-5. Maximo `max_scroll_attempts` intentos (default 10)
+3. Si no alcanza el limite, hace scroll incremental y re-intenta
+4. Corta solo tras N scrolls consecutivos sin novedades (default 3)
+5. Maximo `max_scroll_attempts` intentos (default 50, 0 = scrolls infinitos)
+6. Incluye flag `consecutive_empty_scrolls` para configurar tolerancia
+7. Acepta `skip_library_ids` para evitar reprocesar cards entre scrolls
+8. Acepta `kw_limit` para limite especifico por keyword
+
+### Mejoras Fase 3.1 (Optimización de Adquisición)
+
+| # | Mejora | Descripción |
+|---|--------|-------------|
+| 1 | **Scroll incremental** | Ya no salta directo al fondo. Scrolla 70-110% del viewport por vez, activando lazy loading progresivo de Meta. |
+| 2 | **Tolerancia a scrolls vacios** | No corta en el primer scroll sin novedades. Requiere `consecutive_empty_scrolls` (default 3) intentos consecutivos sin nuevos dominios. |
+| 3 | **Espera inteligente** | Combina `wait_for_function` (observar aparicion de nuevas cards) + timeout con jitter como fallback. |
+| 4 | **Eliminacion de doble extraccion** | Se elimino la segunda extraccion con `limit=5` que era redundante y desperdiciaba recursos. Ahora se mide el nuevo crecimiento directamente del resultado de la extraccion principal. |
+| 5 | **Navegacion humana** | Scroll con `behavior: smooth`, incremento variable aleatorio, micro-movimientos al llegar al fondo para disparar lazy loading residual. |
+| 6 | **Resolucion de URLs acortadas** | `bit.ly`, `tinyurl.com` y `goo.gl` se resuelven automaticamente siguiendo redirecciones HTTP HEAD. La URL final se almacena siempre, nunca la acortada. |
+| 7 | **Observabilidad detallada** | Metricas por extraccion: cards encontradas, procesadas, descartadas por CTA/dominio bloqueado/duplicado/sin landing, URLs acortadas resueltas, nuevos dominios por scroll. |
+
+### Diagrama de flujo mejorado
+
+```
+while not suficientes AND quedan intentos:
+    extract_discovery_ads(limit=per_keyword_limit + 20)
+
+    para cada discovery:
+        si library_id ya visto -> saltar
+        si dominio ya visto -> saltar
+        agregar a coleccion
+
+    si suficientes -> break
+    si 0 nuevos en este paso:
+        consecutive_empty++
+        si consecutive_empty >= limite -> break (corte por agotamiento)
+    si no:
+        consecutive_empty = 0
+
+    scroll incremental (70-110% viewport, smooth)
+    esperar nuevas cards (wait_for_function + timeout con jitter)
+```
 
 ---
 
@@ -350,9 +392,10 @@ Algoritmo:
 
 ### 10.1 Baja densidad de landing URLs externas
 
-De ~140 cards visibles por busqueda, solo ~7-8 tienen landing URLs externas
-validas. La mayoria de anuncios en Meta Ads Library linkean a Facebook,
-Instagram o WhatsApp. Esto es una caracteristica inherente a Meta Ads Library,
+Sin filtros: de ~140 cards visibles por busqueda, solo ~7-8 tienen landing URLs
+externas validas. Con filtros `publisher_platforms=(facebook,instagram)` +
+`sort_mode=total_impressions` (default desde Fase 3.2), se alcanzan ~30 dominios
+unicos (4.3x mejora). Esto es una caracteristica inherente a Meta Ads Library,
 no un error del algoritmo.
 
 ### 10.2 Rendimiento
@@ -405,7 +448,25 @@ anunciante" expandible.
    contenido real.
 
 8. **Jitter en delays**: Todos los `wait_for_timeout` usan +/-30% aleatorio
-   para evitar patrones deterministicos de bot.
+    para evitar patrones deterministicos de bot.
+
+9. **Scroll incremental**: No saltar directamente al fondo. Scrolls de
+    70-110% del viewport con `behavior: smooth` activan mejor el lazy
+    loading de Meta y evitan que el algoritmo se salte batches de cards.
+
+10. **Tolerancia a scrolls vacios**: No cortar en el primer scroll sin
+    novedades. Requerir N consecutivos (default 3) reduce falsos
+    negativos por latencia de red o renderizado diferido.
+
+11. **Resolucion de URLs acortadas**: `bit.ly`, `tinyurl.com` y `goo.gl`
+    se resuelven via HTTP HEAD request desde Python. Siempre se almacena
+    la URL final, nunca la acortada. Esto evita dominios acortadores en
+    los resultados y maximiza la calidad del dato.
+
+12. **Observabilidad en el extractor**: `AdsExtractor.stats` acumula
+    contadores por tipo de descarte. Cada llamada a `extract_discovery_ads`
+    logea el estado completo, permitiendo diagnosticar bottlenecks sin
+    necesidad de depuracion externa.
 
 ---
 
@@ -414,19 +475,21 @@ anunciante" expandible.
 ```
 src/modules/meta_ads/
   acquisition/
-    ads_extractor.py       # Logica principal de extraccion (940 lineas)
+    ads_extractor.py       # Logica principal de extraccion (~1028 lineas)
     ads_searcher.py        # Construccion de URL y navegacion (71 lineas)
-    browser_runner.py      # Orquestacion con scroll + timing (176 lineas)
+    browser_runner.py      # Orquestacion con scroll + timing (~571 lineas)
   browser/
     browser_manager.py     # Inicializacion Chromium + anti-detection (95 lineas)
     session_manager.py     # Contexto/pagina + overrides JS (66 lineas)
   dto/
     browser_ad.py          # DTOs: BrowserAdDiscovery, Enrichment, Result
 scripts/
-  run_meta_ads_browser.py # Entry point CLI
+  run_meta_ads_browser.py # Entry point CLI (124 lineas)
 tests/
   unit/meta_ads/
-    test_browser_acquisition.py  # 20 tests
+    test_browser_acquisition.py  # 24 tests (18 nuevos Fase 3.2)
+    test_meta_client.py          # 3 tests
+    test_parser.py               # 2 tests
 docs/
   doc.phase.3.md           # Este documento
 ```
@@ -451,33 +514,38 @@ _candidate_cards()
        |
        +-> por cada card:
             |
-            +-> _extract_discovery_from_card(card, keyword)
-                 |
-                 +-> _extract_library_id(text)
-                 |   regex: "Identificador de la biblioteca: (d+)"
-                 |
-                 +-> _extract_landing_url(card)
-                 |   1. _is_engagement_href en TODOS los <a>
-                 |      -> si hay wa.me/whatsapp/etc -> return None
-                 |   2. button <a href> -> external landing?
-                 |      -> si, return
-                 |   3. todos los <a href> -> external landing?
-                 |      -> si, return
-                 |      -> no, return None
-                 |
-                 +-> _is_blocked_domain(domain)
-                 |   match exacto o subdominio contra BLOCKED_DOMAINS
-                 |
-                 +-> _extract_advertiser_name(text)
-                 |   backward search from library_id
-                 |
-                 +-> _extract_ad_description(text, advertiser_name)
-                     filtros en orden -> BREAK en URL/display/oferta
+         +-> _extract_discovery_from_card(card, keyword)
+                  |
+                  +-> _extract_library_id(text)
+                  |   regex: "Identificador de la biblioteca: (d+)"
+                  |
+                  +-> _extract_landing_url(card)
+                  |   1. _is_engagement_href en TODOS los <a>
+                  |      -> si hay wa.me/whatsapp/etc -> return None
+                  |   2. button <a href> -> external landing?
+                  |      -> si, return
+                  |   3. todos los <a href> -> external landing?
+                  |      -> si, return
+                  |      -> no, return None
+                  |
+                  +-> _resolve_short_url(landing_url)       [NUEVO]
+                  |   bit.ly/tinyurl/goo.gl -> HTTP HEAD
+                  |   -> sigue redireccion -> URL final
+                  |
+                  +-> _is_blocked_domain(domain)
+                  |   match exacto o subdominio contra BLOCKED_DOMAINS
+                  |
+                  +-> _extract_advertiser_name(text)
+                  |   backward search from library_id
+                  |
+                  +-> _extract_ad_description(text, advertiser_name)
+                      filtros en orden -> BREAK en URL/display/oferta
 ```
 
 ---
 
 ## 14. Diagrama de Flujo de Enrichment
+
 
 ```
 enrich_ads(discoveries)
@@ -512,4 +580,180 @@ enrich_ads(discoveries)
             |   -> _parse_followers_count(raw)
             |
             +-> _close_details()
+```
+
+---
+
+## 15. Fase 3.2 — Configuración Total, Persistencia Robusta y Enrichment-Only
+
+### 15.1 Novedades respecto a Fase 3
+
+| # | Feature | Descripción |
+|---|---------|-------------|
+| 1 | **Per-keyword limits** | `--keyword "nombre:limite"` asigna límite específico por keyword. Sin `:`, usa el global `--limit`. |
+| 2 | **max_scrolls=0 = scrolls infinitos** | Si `0`, solo corta por objetivo alcanzado o 3 scrolls vacíos consecutivos. Sin límite de scrolls máximo. |
+| 3 | **Modo append** | `--mode append` carga dominios y library_ids del archivo existente para no repetirlos. |
+| 4 | **Resume** | `--resume <archivo>` carga dominios de un archivo externo para dedup cross-ejecución. |
+| 5 | **Enrichment-only** | `--enrich-only <archivo.json>` lee discoveries guardados y los enriquece sin volver a scrollear. |
+| 6 | **Checkpoint por keyword** | Guarda el JSON completo después de cada keyword. Si el proceso muere, lo máximo perdido es ~30s. |
+| 7 | **Signal handler** | SIGINT (Ctrl+C) y SIGTERM guardan checkpoint automático antes de salir. |
+| 8 | **extracted_at** | Cada discovery y enrichment lleva `extracted_at` en formato ISO 8601. |
+| 9 | **Sesión nueva por keyword** | Previene OOM cerrando contexto + página entre keywords. |
+| 10 | **Skip library_ids** | Las cards ya vistas entre scrolls se saltan antes de la extracción costosa (query_selector_all). |
+| 11 | **Log de configuración** | Todos los parámetros activos se muestran al inicio del bot. |
+| 12 | **Resumen final** | Tiempo total formateado, keywords procesadas, empresas únicas, desglose por keyword. |
+| 13 | **Bloqueo extra por CLI** | `--blocked-domains "tiktok.com,x.com"` agrega dominios a BLOCKED_DOMAINS sin modificar código. |
+| 14 | **Sort mode configurable** | `--sort-mode total_impressions|relevancy_monthly_grouped`. Default: `total_impressions`. |
+| 15 | **Force overwrite** | `--force` salta la confirmación al sobreescribir archivo existente. |
+
+### 15.2 Filtros Efectivos
+
+Los filtros `publisher_platforms=(facebook,instagram)` + `sort_mode=total_impressions`
+son críticos para la densidad de landings externas. Pruebas con "curso":
+
+| Filtro | Dominios únicos | Mejora |
+|--------|-----------------|--------|
+| Sin filtros | ~7 | — |
+| Con filtros | ~30 | 4.3x |
+
+### 15.3 Pipeline Fase 3.2
+
+```
+CLI (run_meta_ads_browser.py)
+  |
+  +-> MetaAdsBrowserRunner.run(keywords, output_path, mode, ...)
+       |
+       +-> _load_existing()        [si mode=append o resume_path]
+       |   carga dominios previos -> known_domains + known_library_ids
+       |
+       +-> _log_config()           [muestra todos los parametros]
+       |
+       +-> loop por keyword:
+       |   |
+       |   +-> _process_keyword(kw, limit_por_keyword)
+       |   |   |
+       |   |   +-> BrowserManager.start()
+       |   |   +-> SessionManager.create_session()
+       |   |   +-> AdsSearcher.search(keyword)
+       |   |   +-> _collect_discoveries_with_scroll(limit)
+       |   |   |   while not enough AND (max_scrolls==0 OR attempts < max):
+       |   |   |       extract_discovery_ads(skip_library_ids=seen)
+       |   |   |       filter new library_ids not in known / not duplicate
+       |   |   |       if new == 0: consecutive_empty++
+       |   |   |       scroll()
+       |   |   |
+       |   |   +-> enrich_ads(discoveries) [si no --no-enrich]
+       |   |   +-> SessionManager.close_session()
+       |   |
+       |   +-> _save_checkpoint()   [guarda JSON completo]
+       |   +-> _register_signal_handler()  [SIGINT/SIGTERM -> checkpoint]
+       |
+       +-> _log_final_summary()
+```
+
+### 15.4 Estructura de Archivos Actualizada
+
+```
+src/modules/meta_ads/
+  acquisition/
+    ads_extractor.py       # ~1028 lineas (+extra_blocked_domains, extracted_at)
+    ads_searcher.py        # 71 lineas (sin cambios)
+    browser_runner.py      # ~571 lineas (refactor mayor)
+  browser/
+    browser_manager.py     # 95 lineas (sin cambios)
+    session_manager.py     # 66 lineas (sin cambios)
+  dto/
+    browser_ad.py          # DTOs con extracted_at
+scripts/
+  run_meta_ads_browser.py # 124 lineas (CLI completo)
+tests/
+  unit/meta_ads/
+    test_browser_acquisition.py  # 24 tests (18 nuevos)
+    test_meta_client.py          # 3 tests (sin cambios)
+    test_parser.py               # 2 tests (sin cambios)
+docs/
+  doc.phase.3.md           # Este documento (+seccion 15)
+  phases/PHASE_03_2_CONFIG_PERSIST_ENRICH.md  # Documento de fase dedicado
+```
+
+### 15.5 Tabla de Argumentos CLI
+
+| Argumento | Default | Descripción |
+|-----------|---------|-------------|
+| `--keyword` | (requerido) | `"nombre"` o `"nombre:limite"` |
+| `--limit` | 30 | Límite global por keyword |
+| `--max-scrolls` | 50 | 0 = scrolls infinitos |
+| `--empty-scrolls` | 3 | Cortar tras N scrolls vacíos consecutivos |
+| `--sort-mode` | `total_impressions` | `relevancy_monthly_grouped` |
+| `--mode` | `overwrite` | `append` para retomar |
+| `--resume` | — | JSON con dominios a bloquear (dedup) |
+| `--enrich-only` | — | JSON de discoveries para enriquecer |
+| `--blocked-domains` | — | Dominios extra, separados por coma |
+| `--headless` | `False` | Modo sin ventana |
+| `--no-enrich` | `False` | Solo discovery, sin enrichment |
+| `--force` | `False` | Sobreescribir sin preguntar |
+| `--debug` | `False` | Logs detallados (DEBUG level) |
+| `--slow-mo` | 0 | Delay entre acciones (ms) |
+| `--wait-ms` | 7000 | Espera post-búsqueda |
+| `--action-delay-ms` | 1200 | Delay entre clics |
+
+### 15.6 Log de Configuración (inicio)
+
+```
+======================================================================
+  INICIO DE ADQUISICION — META ADS LIBRARY
+======================================================================
+  Keywords            : "curso:30", "curso marketing:50", "curso ingles"
+  Modo                : append (retomando archivo existente)
+  Resume desde        : output/anterior.json (12 dominios cargados)
+  Archivo salida      : output/resultados.json
+  Limite global       : 30
+  Scrolls maximos     : 50 (0=infinito)
+  Cortar tras vacios  : 3
+  Plataformas         : facebook, instagram
+  Ordenamiento        : total_impressions
+  Enriquecimiento     : si
+  Modo debug          : no
+  Navegador           : headless
+  Dominios bloqueados : 29 default + 2 extra (tiktok.com, x.com)
+  Dominios conocidos  : 0 (sin previos)
+  Library IDs previos : 0
+======================================================================
+  ESTADISTICAS DE DESCARTE:
+    • sin_landing       – Sin enlace externo
+    • solo_cta          – Solo WhatsApp/Messenger/tel
+    • dominio_bloq.     – En BLOCKED_DOMAINS
+    • url_acortada      – bit.ly/tinyurl resuelta
+======================================================================
+```
+
+### 15.7 Log de Resumen Final
+
+```
+======================================================================
+  RESUMEN FINAL
+======================================================================
+  Tiempo total              : 24m 32s
+  Keywords procesadas       : 4/4
+  Resultados totales        : 107
+  Empresas (dominios) unicas: 89
+  Archivo de salida         : output/resultados.json (modo: overwrite)
+  Dominios cargados previos : 0
+
+  KEYWORD                     EMPRESAS   TIEMPO    SCROLLS  ESTADO
+  ----------------------------------------------------------------
+  curso                          30    4m 53s      6     objetivo
+  curso marketing                30    7m 30s     10     objetivo
+  curso programacion             30    8m 13s      8     objetivo
+  curso ingles                   17    4m 42s      8     3 vacios
+
+  ESTADISTICAS DE EXTRACCION:
+    Cards vistas                  : 9,896
+    Cards nuevas evaluadas        : 5,906
+    Descartadas sin landing       : 5,232 (88.6%)
+    Descartadas solo CTA          : 194   (3.3%)
+    Descartadas dominio bloq.     : 0     (0.0%)
+    URLs acortadas resueltas      : 0     (0.0%)
+    Tasa conversion (unicos/eval) : 1.5%
+======================================================================
 ```

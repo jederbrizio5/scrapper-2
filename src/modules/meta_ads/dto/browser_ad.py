@@ -14,6 +14,7 @@ class BrowserAdDiscovery:
     ad_library_url: str
     advertiser_name: str | None = None
     ad_snapshot_url: str | None = None
+    extracted_at: str | None = None
 
 
 @dataclass
@@ -27,6 +28,7 @@ class BrowserAdEnrichment:
     instagram_followers: str | None = None
     advertiser_info: str | None = None
     login_required: bool = False
+    extracted_at: str | None = None
 
 
 @dataclass

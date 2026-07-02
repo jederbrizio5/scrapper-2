@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 from src.modules.meta_ads.acquisition.ads_extractor import AdsExtractor
@@ -74,7 +75,9 @@ def test_ads_searcher_builds_required_filters():
     assert "country=ALL" in search_url
     assert "ad_type=all" in search_url
     assert "content_languages%5B0%5D=es" in search_url
-    assert "sort_data%5Bmode%5D=relevancy_monthly_grouped" in search_url
+    assert "sort_data%5Bmode%5D=total_impressions" in search_url
+    assert "publisher_platforms%5B0%5D=facebook" in search_url
+    assert "publisher_platforms%5B1%5D=instagram" in search_url
     assert "active_status=active" in search_url
     assert "q=curso+marketing" in search_url
     mock_page.wait_for_timeout.assert_called_once_with(10)
@@ -280,3 +283,198 @@ def extractor_discovery(library_id: str) -> BrowserAdDiscovery:
     card = _mock_card(hrefs=["https://landing.example.com"], library_id=library_id)
     mock_page.query_selector_all.return_value = [card]
     return AdsExtractor(mock_page).extract_discovery_ads(keyword="curso", limit=1)[0]
+
+
+# ── nuevos tests Fase 3.2 ─────────────────────────────────────────────
+
+
+def test_parse_keyword_with_limit():
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    result = MetaAdsBrowserRunner._parse_keywords(["curso:30", "curso marketing"], 30)
+    assert result == [("curso", 30), ("curso marketing", 30)]
+
+
+def test_parse_keyword_without_limit():
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    result = MetaAdsBrowserRunner._parse_keywords(["curso marketing", "ingles"], 20)
+    assert result == [("curso marketing", 20), ("ingles", 20)]
+
+
+def test_parse_keyword_global_none():
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    result = MetaAdsBrowserRunner._parse_keywords(["curso:50"], 30)
+    assert result == [("curso", 50)]
+
+
+def test_razon_corte_objetivo():
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    assert "objetivo" in MetaAdsBrowserRunner._razon_corte([1] * 30, 0, 5, 30)
+
+
+def test_razon_corte_vacios():
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    assert "vacios" in MetaAdsBrowserRunner._razon_corte([1] * 5, 3, 5, 30)
+
+
+def test_razon_corte_scrolls():
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    assert "limite" in MetaAdsBrowserRunner._razon_corte([1] * 5, 1, 50, 30)
+
+
+def test_load_domains_from_file(tmp_path):
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    f = tmp_path / "test.json"
+    f.write_text(
+        json.dumps(
+            [
+                {"discovery": {"domain": "example.com", "library_id": "111"}},
+                {"discovery": {"domain": "test.org", "library_id": "222"}},
+            ]
+        )
+    )
+    domains, ids = MetaAdsBrowserRunner._load_domains_from_file(str(f))
+    assert domains == {"example.com", "test.org"}
+    assert ids == {"111", "222"}
+
+
+def test_load_domains_from_file_missing(tmp_path, caplog):
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    caplog.set_level("WARNING")
+    domains, ids = MetaAdsBrowserRunner._load_domains_from_file(
+        str(tmp_path / "no_existe.json")
+    )
+    assert domains == set()
+    assert ids == set()
+    assert "No se pudo cargar resume" in caplog.text
+
+
+def test_extracted_at_in_discovery():
+    mock_page = MagicMock()
+    mock_page.url = "https://www.facebook.com/ads/library/?q=curso"
+    card = _mock_card(hrefs=["https://landing.example.com"], library_id="123456")
+    mock_page.query_selector_all.return_value = [card]
+
+    extractor = AdsExtractor(mock_page)
+    ads = extractor.extract_discovery_ads(keyword="curso", limit=1)
+
+    assert len(ads) == 1
+    assert ads[0].extracted_at is not None
+    assert "hs" in ads[0].extracted_at
+
+
+def test_extra_blocked_domains():
+    mock_page = MagicMock()
+    mock_page.url = "https://www.facebook.com/ads/library/?q=curso"
+    blocked_card = _mock_card(
+        hrefs=["https://customblocked.com/ad"], library_id="666661"
+    )
+    landing_card = _mock_card(hrefs=["https://good.com/landing"], library_id="666662")
+    mock_page.query_selector_all.return_value = [blocked_card, landing_card]
+
+    extractor = AdsExtractor(mock_page, extra_blocked_domains={"customblocked.com"})
+    ads = extractor.extract_discovery_ads(keyword="curso", limit=3)
+
+    assert len(ads) == 1
+    assert ads[0].library_id == "666662"
+    assert ads[0].domain == "good.com"
+
+
+def test_enrich_only_creates_enrichment(tmp_path):
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    disc_json = [
+        {
+            "discovery": {
+                "keyword": "curso",
+                "library_id": "777777",
+                "description": "Curso test",
+                "circulation_start": None,
+                "landing_url": "https://test.com",
+                "domain": "test.com",
+                "ad_library_url": "https://www.facebook.com/ads/library/?id=777777",
+                "advertiser_name": "Test",
+                "extracted_at": "2026-07-02T00:00:00",
+            }
+        }
+    ]
+    input_f = tmp_path / "input.json"
+    input_f.write_text(json.dumps(disc_json))
+    output_f = tmp_path / "output.json"
+
+    runner = MetaAdsBrowserRunner(
+        headless=True,
+        per_keyword_limit=10,
+        enrich=True,
+    )
+
+    with patch.object(runner, "_register_signal_handler"):
+        with patch.object(runner, "_save_checkpoint") as mock_save:
+            with patch.object(runner, "_process_keyword") as mock_pk:
+                mock_pk.return_value = ([], MagicMock())
+                runner.run(
+                    ["curso"], output_path=str(output_f), mode="overwrite", force=True
+                )
+                mock_save.assert_called()
+
+
+def test_checkpoint_saves_file(tmp_path):
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    results = [
+        BrowserAdResult(
+            discovery=BrowserAdDiscovery(
+                keyword="test",
+                library_id="c1",
+                description="d",
+                circulation_start=None,
+                landing_url="https://x.com",
+                domain="x.com",
+                ad_library_url="https://fb.com/ads/?id=c1",
+                extracted_at="2026-07-02T00:00:00",
+            )
+        )
+    ]
+    out = tmp_path / "checkpoint.json"
+    runner = MetaAdsBrowserRunner(per_keyword_limit=10)
+    runner._save_checkpoint(results, str(out))
+    assert out.exists()
+    data = json.loads(out.read_text())
+    assert len(data) == 1
+    assert data[0]["discovery"]["library_id"] == "c1"
+
+
+def test_append_mode_loads_existing(tmp_path):
+    from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
+
+    existing = tmp_path / "existing.json"
+    existing.write_text(
+        json.dumps(
+            [
+                {
+                    "discovery": {
+                        "domain": "old.com",
+                        "library_id": "888881",
+                        "keyword": "prev",
+                        "description": None,
+                        "circulation_start": None,
+                        "landing_url": "",
+                        "ad_library_url": "",
+                        "advertiser_name": None,
+                    }
+                }
+            ]
+        )
+    )
+
+    runner = MetaAdsBrowserRunner(per_keyword_limit=10)
+    domains, ids = runner._load_existing(str(existing), "append", None)
+    assert "old.com" in domains
+    assert "888881" in ids

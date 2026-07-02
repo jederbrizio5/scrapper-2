@@ -1,84 +1,229 @@
 # Meta Ads Prospecting System
 
-## Descripción
-Sistema modular de prospección de Meta Ads preparado para desarrollarse por fases mediante personas o agentes de IA.
+Sistema modular de prospeccion de anuncios via **Meta Ads Library** con adquisicion por navegador (Playwright), enrichment de anunciantes y persistencia estructurada.
 
-El estado actual cubre bootstrap, infraestructura de datos, cliente Meta Ads Library y adquisición robusta por navegador (Fase 3 completa). Las fases siguientes deben continuar desde la documentación en `docs/`, especialmente `docs/MAESTRO.MD`.
+---
 
-## Instalación
-Para instalar las dependencias necesarias:
+## Instalacion
 
-`./scripts/install.sh`
+```bash
+./scripts/install.sh
+source venv/bin/activate && playwright install chromium
+```
 
-Si Playwright necesita navegadores en tu entorno, ejecutar luego:
+---
 
-`source venv/bin/activate && playwright install chromium`
+## Uso Rapido
 
-## Ejecución
-Para iniciar el punto de entrada principal:
+```bash
+# Scrapeo basico (default: output con timestamp + split por keyword)
+source venv/bin/activate && python scripts/run_meta_ads_browser.py \
+  --keyword "curso:30" --keyword "marketing:30" --headless --no-enrich
+```
 
-`./scripts/run.sh`
+Esto crea `output/DD-MM-YYYY_HHMMSS/resultados_parts/{keyword}.json` + `index.json`.
 
-Para ejecutar la prueba de concepto de navegador:
+### Scrapeo clasico (un solo JSON, sin carpeta fecha)
 
-`source venv/bin/activate && PYTHONPATH=. python scripts/run_poc.py`
+```bash
+python scripts/run_meta_ads_browser.py \
+  --keyword "curso:30" --keyword "marketing:30" \
+  --headless --no-enrich --no-split --output resultados.json
+```
 
-Para ejecutar Fase 3 contra Meta Ads Library y traer 3 anuncios por keyword con landing externa:
+### Enriquecer resultados existentes (in-place)
 
-`source venv/bin/activate && python scripts/run_meta_ads_browser.py --keyword "curso" --keyword "marketing" --limit 3 --headless`
+```bash
+# In-place: modifica los archivos originales (parts o JSON unico)
+python scripts/run_meta_ads_browser.py \
+  --enrich-only output/02-07-2026_192519/resultados.json --headless
 
-Para ejecutar sin enriquecimiento (solo discovery):
+# A nuevo archivo
+python scripts/run_meta_ads_browser.py \
+  --enrich-only resultados.json --output enriquecidos.json --headless
+```
 
-`source venv/bin/activate && python scripts/run_meta_ads_browser.py --keyword "curso" --limit 3 --headless --no-enrich`
+### Retomar ejecucion (append)
 
-El resultado queda en `output/meta_ads_browser_results.json`. Para depurar visualmente, ejecutar sin `--headless`.
+```bash
+python scripts/run_meta_ads_browser.py \
+  --keyword "curso:30" --mode append --headless --no-enrich
+```
 
-### Características implementadas en Fase 3
+### Dejar andando de noche
 
-- **Anti-detección**: 9 flags Chromium, User-Agent Chrome 125 realista,
-  `navigator.webdriver` override, viewport jitter, headers HTTP realistas,
-  jitter ±30% en delays.
-- **Landing URL desde botón CTA**: Prioriza `<a>` dentro de botones; solo
-  cae a texto si no hay botones.
-- **Engagement CTA detection**: Si cualquier `<a>` en la card apunta a
-  WhatsApp/Messenger/tel, el anuncio se descarta automáticamente.
-- **Descripción limpia**: Filtra ruido de UI (~30 líneas de noise), URLs
-  (con o sin emoji), display URLs (`CEFOMIN.CL`), ofertas porcentuales;
-  corta recolección (BREAK) al detectar footer.
-- **Advertiser name**: Búsqueda backward desde library_id primero (evita
-  falsos como "Transparencia de la UE"), fallback forward.
-- **Enrichment**: Abre el diálogo de detalles, expande sección del
-  anunciante, extrae usuarios FB/IG y seguidores con parseo de formato
-  español (coma decimal, "mil"/"mill", punto separador).
-- **Scroll**: Extrae más cards mediante scroll, filtra por dominio único
-  (solo 1 resultado por dominio por ejecución).
-- **Timing**: Log por keyword y total con `time.perf_counter()`.
-- **12+ correcciones**: `ig.me` bloqueado, followers con "mill",
-  decimal comma + "mil" con float math, descripción sin botones/nav,
-  sin display URLs, sin URLs con emoji, sin WhatsApp CTAs falsas.
+```bash
+nohup python scripts/run_meta_ads_browser.py \
+  --keyword "curso:100" --keyword "marketing:100" \
+  --keyword "programacion:100" --keyword "ingles:100" \
+  --headless --no-enrich > output/night_run.log 2>&1 &
+```
+
+---
+
+## Argumentos CLI
+
+### Scrapeo
+
+| Argumento | Default | Descripcion |
+|-----------|---------|-------------|
+| `--keyword` | (requerido) | `"nombre"` o `"nombre:limite"`. Repetible. |
+| `--limit` | `30` | Limite global por keyword si no se especifica en `--keyword` |
+| `--headless` | `False` | Modo sin ventana |
+| `--no-enrich` | `False` | Solo discovery, sin enrichment |
+| `--output` | `output/DD-MM-YYYY_HHMMSS/resultados.json` | Ruta de salida. Sin `--no-split`, los datos van a `_parts/` |
+| `--no-split` | `False` | No dividir por keyword (un solo JSON plano) |
+| `--mode` | `overwrite` | `append` para retomar desde ejecucion anterior |
+| `--resume` | — | JSON o `_parts/` con dominios a dedup (cross-ejecucion) |
+
+### Scroll
+
+| Argumento | Default | Descripcion |
+|-----------|---------|-------------|
+| `--max-scrolls` | `0` | 0 = scrolls infinitos (corta solo por objetivo o 3 vacios) |
+| `--empty-scrolls` | `3` | Cortar tras N scrolls consecutivos sin nuevos dominios |
+| `--sort-mode` | `total_impressions` | Criterio de ordenamiento en Meta Ads Library. Alternativa: `relevancy_monthly_grouped` |
+
+### Anti-bloqueo / Sesion
+
+| Argumento | Default | Descripcion |
+|-----------|---------|-------------|
+| `--session-per-keywords` | `3` | Reutilizar sesion cada N keywords. 0 = sesion nueva por keyword |
+| `--proxy` | — | Proxy unico: `http://user:pass@host:port` |
+| `--proxy-list` | — | Archivo de proxies (uno por linea, `#` para comentarios). Round-robin entre ellos |
+| `--max-retries` | `3` | Intentos por keyword fallida (incluye el primero). 0 = sin reintento |
+| `--retry-delay` | `15` | Espera en segundos entre reintentos |
+| `--global-timeout` | `0` (sin limite) | Timeout global en minutos. Al alcanzarlo guarda checkpoint y sale |
+| `--blocked-domains` | — | Dominios extra a bloquear (separados por coma) |
+
+### Enrichment
+
+| Argumento | Default | Descripcion |
+|-----------|---------|-------------|
+| `--enrich-only` | — | Ruta a discoveries para enriquecer (archivo JSON, carpeta, o `_parts/`). Sin `--output` modifica in-place |
+| `--wait-ms` | `7000` | Espera post-busqueda antes de extraer cards |
+| `--action-delay-ms` | `1200` | Delay entre acciones (scrolls, clics) |
+
+### Misc
+
+| Argumento | Default | Descripcion |
+|-----------|---------|-------------|
+| `--force` | `False` | Sobreescribir sin preguntar |
+| `--debug` | `False` | Logs detallados (DEBUG level) |
+| `--slow-mo` | `0` | Slow motion de Playwright en ms |
+| `--action-timeout` | `30000` | Timeout de Playwright por accion en ms |
+
+---
+
+## Comportamiento Detallado
+
+### Output por defecto
+
+Sin `--output`, se genera automaticamente:
+
+```
+output/02-07-2026_192519/
+├── resultados_parts/
+│   ├── curso.json
+│   ├── marketing.json
+│   └── index.json
+```
+
+Con `--no-split` o `--output` explicito, se escribe un solo JSON plano.
+
+### Enrich in-place
+
+- Sin `--output`: modifica los archivos originales (actualiza cada part file o sobreescribe el JSON unico).
+- Con `--output`: escribe a un archivo nuevo, dejando los originales intactos.
+
+### Append
+
+`--mode append` detecta automaticamente `_parts/` hermano al path de salida y carga los resultados previos desde ahi, deduplicando por `library_id` y `domain`.
+
+### Proxies
+
+- `--proxy`: un proxy fijo para todas las sesiones.
+- `--proxy-list`: archivo de proxies. Se rotan en round-robin entre keywords.
+- Sin proxy: conexion directa.
+
+### Sesion compartida
+
+Con `--session-per-keywords 3`:
+- Keywords 1-3 comparten la misma sesion de Playwright.
+- Keyword 4 abre una nueva sesion.
+- Reduce overhead de creacion de contextos.
+
+### Reintentos
+
+Cuando una keyword falla por timeout/error de red:
+1. Se registra el error.
+2. Espera `--retry-delay` segundos.
+3. Abre nueva sesion (y nuevo proxy si hay) y reintenta.
+4. Si persiste tras `--max-retries` intentos, marca la keyword como fallida y continua con la siguiente.
+
+---
 
 ## Testing
-Para correr la suite de tests (unitarios y de integración):
 
-`./scripts/test.sh`
+```bash
+./scripts/test.sh
+# o directamente:
+source venv/bin/activate && python -m pytest tests/ -v
+```
 
 ## Linting y Formato
-Para revisar el código (lint):
 
-`./scripts/lint.sh`
+```bash
+./scripts/lint.sh      # revisar
+./scripts/format.sh    # formatear
+./scripts/check.sh     # tests + lint + formato (obligatorio antes de cerrar tareas)
+```
 
-Para formatear el código:
+---
 
-`./scripts/format.sh`
+## Caracteristicas Implementadas
 
-Para comprobar que todo funciona (tests, lint):
+### Adquisicion por navegador (Fase 3)
+- **Anti-deteccion**: 9 flags Chromium, User-Agent Chrome, `navigator.webdriver` override, viewport jitter, headers realistas.
+- **Landing URL desde boton CTA**: Prioriza `<a>` dentro de botones.
+- **Engagement CTA detection**: Descarta WhatsApp/Messenger/tel.
+- **Descripcion limpia**: Filtra ~30 lineas de ruido UI.
+- **Advertiser name**: Busqueda backward desde library ID.
+- **Enrichment**: Dialogo de detalles, seccion del anunciante, usuarios FB/IG, seguidores.
+- **Scroll incremental**: Extraccion con tolerancia a scrolls vacios.
 
-`./scripts/check.sh`
+### Persistencia y configuracion (Fase 3.2)
+- **Per-keyword limits**: Control granular via `"nombre:limite"`.
+- **Scrolls infinitos**: `--max-scrolls 0` corta solo por objetivo o agotamiento.
+- **Modo append**: Retoma ejecucion sin duplicar.
+- **Resume cross-ejecucion**: Dedup desde JSON de campana anterior.
+- **Checkpoint por keyword**: Guarda tras cada keyword + cada scroll.
+- **Signal handler**: SIGINT/SIGTERM guardan checkpoint antes de salir.
+- **Split por keyword**: Archivos separados + index.json de metadatos.
+- **Enrich in-place**: Modifica archivos originales, sin duplicar.
+- **Reintentos**: Reintento automatico con backoff y nueva sesion.
+- **Proxies**: Unico o lista rotativa round-robin.
+- **Sesion compartida**: Reutiliza contexto Playwright cada N keywords.
+- **Timeout global**: Limite de minutos para toda la ejecucion.
+- **Formato hora Argentina**: `dd/mm/YYYY HH:MM:SS hs` en logs y datos.
+- **Output con timestamp**: Carpeta `DD-MM-YYYY_HHMMSS` auto-generada.
 
-Este comando es obligatorio antes de considerar cerrada cualquier tarea.
+---
 
-## Documentación Para Agentes
-Antes de pedirle a otra IA/agente que implemente una fase, indicarle que lea:
+## Estructura del Proyecto
+
+- `src/`: Codigo fuente principal.
+- `docs/`: Documentacion del proyecto y reglas de desarrollo.
+- `tests/`: Tests unitarios y de integracion.
+- `scripts/`: Instalacion, ejecucion y validacion.
+- `data/`: Datos crudos, procesados y cache.
+- `logs/`: Archivos de log.
+- `migrations/`: Migraciones Alembic.
+- `requirements.txt` / `requirements-dev.txt`: Dependencias.
+
+## Documentacion para Agentes
+
+Antes de implementar una fase, leer:
 
 - `docs/MAESTRO.MD`
 - `docs/AGENT_WORKFLOW.md`
@@ -87,15 +232,4 @@ Antes de pedirle a otra IA/agente que implemente una fase, indicarle que lea:
 - `docs/ARCHITECTURE.md`
 - `docs/PHASES.md`
 
-Los agentes no deben trabajar directo sobre `main`. Cada tarea debe hacerse en una rama propia, validarse con `./scripts/check.sh` y cerrarse mediante Pull Request con pruebas, riesgos y plan de rollback.
-
-## Estructura del Proyecto
-- `src/`: Código fuente principal.
-- `docs/`: Documentación del proyecto y reglas de desarrollo.
-- `tests/`: Tests unitarios y de integración.
-- `scripts/`: Scripts automatizados para instalación, ejecución y validación.
-- `data/`: Datos crudos, procesados y caché.
-- `logs/`: Archivos de log.
-- `migrations/`: Migraciones Alembic.
-- `requirements.txt`: Dependencias de runtime.
-- `requirements-dev.txt`: Dependencias de desarrollo y testing.
+Cada tarea en rama propia, validar con `./scripts/check.sh`, cerrar mediante Pull Request.

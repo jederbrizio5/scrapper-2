@@ -21,7 +21,7 @@ Antes de modificar codigo, leer en este orden:
 
 ## Estado Actual
 
-El proyecto esta estabilizado hasta Fase 3.
+El proyecto esta estabilizado hasta Fase 3.2.
 
 Implementado:
 
@@ -37,6 +37,8 @@ Implementado:
 - Adquisicion por navegador con Playwright: discovery y enrichment.
 - Extraction de usuarios sociales (FB/IG) y seguidores desde Meta Ads Library.
 - Tests unitarios e integracion mockeados.
+- Fase 3.2: configuracion total por CLI, persistencia robusta con checkpoint y signal handler,
+  enrichment-only, dedup cross-keyword, limites por keyword, bloqueo extra de dominios.
 
 Decision importante:
 
