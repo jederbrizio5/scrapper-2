@@ -175,12 +175,15 @@ def test_ads_extractor_enrichment_reads_social_users():
     heading.inner_text.return_value = "Información sobre el anunciante"
     close_button = MagicMock()
 
+    # New enrich_ads: page.goto -> wait -> _candidate_cards -> _find_detail_button
+    # -> button.click -> wait -> _find_detail_dialog -> _click_advertiser_heading
+    # -> wait -> _close_details
     mock_page.query_selector_all.side_effect = [
-        [card],
-        [dialog],
-        [heading],
+        [card],  # _candidate_cards
+        [dialog],  # _find_detail_dialog
     ]
-    mock_page.query_selector.return_value = close_button
+    mock_page.query_selector.return_value = close_button  # _close_details
+    dialog.query_selector_all.return_value = [heading]  # _click_advertiser_heading
 
     discovery = extractor_discovery("333")
     extractor = AdsExtractor(mock_page, action_delay_ms=1)

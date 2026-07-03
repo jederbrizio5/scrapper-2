@@ -95,6 +95,10 @@ def parse_args() -> argparse.Namespace:
         help="Reutilizar sesion cada N keywords (default 3, recomendado 3-5, 0 = sesion nueva por keyword)",
     )
     parser.add_argument(
+        "--session-per-ads", type=int, default=5,
+        help="Recrear sesion cada N ads en modo enrich-only (default 5, recomendado 3-8, 0 = sesion unica para todos los ads)",
+    )
+    parser.add_argument(
         "--proxy",
         help="Proxy unico: http://user:pass@host:port",
     )
@@ -168,6 +172,7 @@ def main() -> None:
         max_retries=args.max_retries,
         retry_delay=args.retry_delay,
         session_per_keywords=args.session_per_keywords,
+        session_per_ads=args.session_per_ads,
         proxy_list=proxy_list if proxy_list else None,
         split_by_keyword=split_by_keyword,
     )

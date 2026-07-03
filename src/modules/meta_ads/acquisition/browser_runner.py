@@ -51,6 +51,7 @@ class MetaAdsBrowserRunner:
         max_retries: int = 3,
         retry_delay: int = 15,
         session_per_keywords: int = 3,
+        session_per_ads: int = 5,
         proxy_list: list[str] | None = None,
         split_by_keyword: bool = False,
     ):
@@ -73,6 +74,7 @@ class MetaAdsBrowserRunner:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.session_per_keywords = session_per_keywords
+        self.session_per_ads = session_per_ads
         self._proxy_cycle = list(proxy_list) if proxy_list else []
         self.split_by_keyword = split_by_keyword
         self.publisher_platforms = ("facebook", "instagram")
@@ -376,6 +378,11 @@ class MetaAdsBrowserRunner:
         raw, parts_dir, source = self._resolve_enrich_source(input_path)
 
         logger.info("Enrichment-only: %d discoveries desde %s", len(raw), source)
+        logger.info(
+            "Sesion por cada %d ads | %s",
+            self.session_per_ads,
+            "headless" if headless else "visible",
+        )
         discoveries = []
         for entry in raw:
             disc = entry.get("discovery", entry)
@@ -403,10 +410,32 @@ class MetaAdsBrowserRunner:
         results: list[BrowserAdResult] = []
         bm = BrowserManager(headless=headless, debug_mode=False, slow_mo_ms=0)
         with bm as browser:
-            for i, disc in enumerate(discoveries, 1):
-                try:
-                    session = SessionManager(browser, user_agent=bm.user_agent)
-                    page = session.create_session()
+            session: SessionManager | None = None
+            page = None
+            ads_in_session = 0
+            try:
+                for i, disc in enumerate(discoveries, 1):
+                    # ── rotacion de sesion cada N ads ──
+                    if session is None or (
+                        self.session_per_ads > 0
+                        and ads_in_session >= self.session_per_ads
+                    ):
+                        if session:
+                            try:
+                                session.close_session()
+                            except Exception:
+                                pass
+                        session = SessionManager(browser, user_agent=bm.user_agent)
+                        page = session.create_session()
+                        ads_in_session = 0
+                        logger.info(
+                            "Nueva sesion para ads [%d..%d] de %d",
+                            i,
+                            min(i + self.session_per_ads - 1, len(discoveries)),
+                            len(discoveries),
+                        )
+
+                    ads_in_session += 1
                     try:
                         extractor = AdsExtractor(
                             page=page,
@@ -444,18 +473,23 @@ class MetaAdsBrowserRunner:
                             len(discoveries),
                             disc.library_id,
                             "OK"
-                            if enrichment and enrichment.facebook_user
+                            if enrichment
+                            and (enrichment.facebook_user or enrichment.instagram_user)
                             else "sin datos",
                         )
-                    finally:
+                    except Exception as exc:
+                        logger.error(
+                            "Error enriqueciendo library_id=%s error=%s",
+                            disc.library_id,
+                            exc,
+                            exc_info=self.debug_mode,
+                        )
+            finally:
+                if session:
+                    try:
                         session.close_session()
-                except Exception as exc:
-                    logger.error(
-                        "Error enriqueciendo library_id=%s error=%s",
-                        disc.library_id,
-                        exc,
-                        exc_info=self.debug_mode,
-                    )
+                    except Exception:
+                        pass
 
         if output_path:
             self._save_checkpoint(results, output_path)
@@ -860,6 +894,10 @@ class MetaAdsBrowserRunner:
             f"{self.session_per_keywords} keywords"
             if self.session_per_keywords
             else "1 keyword (propia)",
+        )
+        logger.info(
+            "  Sesion cada N ads   : %d (enrich-from-file)",
+            self.session_per_ads,
         )
         logger.info("  Proxies disponibles : %d", len(self._proxy_cycle))
         logger.info(

@@ -101,6 +101,7 @@ nohup python scripts/run_meta_ads_browser.py \
 | Argumento | Default | Descripcion |
 |-----------|---------|-------------|
 | `--enrich-only` | — | Ruta a discoveries para enriquecer (archivo JSON, carpeta, o `_parts/`). Sin `--output` modifica in-place |
+| `--session-per-ads` | `5` | Recrear sesion cada N ads en modo enrich-only (0 = sesion unica, mas rapido pero mayor riesgo de bloqueo) |
 | `--wait-ms` | `7000` | Espera post-busqueda antes de extraer cards |
 | `--action-delay-ms` | `1200` | Delay entre acciones (scrolls, clics) |
 

@@ -265,23 +265,46 @@ class AdsExtractor:
     def enrich_ads(
         self, discoveries: list[BrowserAdDiscovery]
     ) -> list[BrowserAdResult]:
-        """Abre detalles de anuncios seleccionados y agrega datos del anunciante."""
-        cards = self._candidate_cards()
-        logger.info("Cards para enriquecer count=%s", len(cards))
+        """Abre detalles de cada anuncio navegando a su URL individual.
+
+        Despues del scroll las cards del discovery ya no estan en el DOM,
+        por eso navegamos a la URL de cada ad en vez de buscar cards en la pagina actual.
+        """
+        logger.info(
+            "Enriqueciendo %d discoveries navegando a cada URL", len(discoveries)
+        )
         results: list[BrowserAdResult] = []
 
-        for discovery in discoveries:
-            card = self._find_card_by_library_id(cards, discovery.library_id)
-            if not card:
-                logger.warning(
-                    "No se encontro card para enriquecer library_id=%s",
-                    discovery.library_id,
-                )
+        for i, discovery in enumerate(discoveries, 1):
             enrichment = None
-            if card:
-                enrichment = self._extract_enrichment_from_card(
-                    card, discovery.library_id
+            try:
+                self.page.goto(discovery.ad_library_url, wait_until="networkidle")
+                self.page.wait_for_timeout(3000)
+
+                cards = self._candidate_cards()
+                card = self._find_card_by_library_id(cards, discovery.library_id)
+                if card:
+                    enrichment = self._extract_enrichment_from_card(
+                        card, discovery.library_id
+                    )
+
+                logger.info(
+                    "[%d/%d] Enriquecido library_id=%s %s",
+                    i,
+                    len(discoveries),
+                    discovery.library_id,
+                    "OK"
+                    if enrichment
+                    and (enrichment.facebook_user or enrichment.instagram_user)
+                    else "sin datos",
                 )
+            except Exception as exc:
+                logger.warning(
+                    "Error enriqueciendo library_id=%s error=%s",
+                    discovery.library_id,
+                    exc,
+                )
+
             results.append(BrowserAdResult(discovery=discovery, enrichment=enrichment))
 
         return results
@@ -402,21 +425,17 @@ class AdsExtractor:
     ) -> BrowserAdEnrichment | None:
         try:
             button = self._find_detail_button(card)
-            if not button:
-                logger.warning(
-                    "Boton de detalle no encontrado library_id=%s", library_id
-                )
-                return BrowserAdEnrichment(
-                    library_id=library_id,
-                    extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
-                )
+            detail_dialog = None
 
-            button.click(timeout=5000, force=True)
-            self.page.wait_for_timeout(self._jittered_delay())
+            if button:
+                button.click(timeout=5000, force=True)
+                self.page.wait_for_timeout(self._jittered_delay())
 
-            btn_text = self._safe_inner_text(button).strip()
-            if "resumen" in btn_text.lower():
-                detail_dialog = self._enter_from_summary()
+                btn_text = self._safe_inner_text(button).strip()
+                if "resumen" in btn_text.lower():
+                    detail_dialog = self._enter_from_summary()
+                else:
+                    detail_dialog = self._find_detail_dialog()
             else:
                 detail_dialog = self._find_detail_dialog()
 
