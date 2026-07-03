@@ -21,7 +21,7 @@ source venv/bin/activate && python scripts/run_meta_ads_browser.py \
   --keyword "curso:30" --keyword "marketing:30" --headless --no-enrich
 ```
 
-Esto crea `output/DD-MM-YYYY_HHMMSS/resultados_parts/{keyword}.json` + `index.json`.
+Esto crea `output/DD-MM-YYYY_HH-MM-SS/resultados_parts/{keyword}.json` + `index.json`.
 
 ### Scrapeo clasico (un solo JSON, sin carpeta fecha)
 
@@ -36,11 +36,15 @@ python scripts/run_meta_ads_browser.py \
 ```bash
 # In-place: modifica los archivos originales (parts o JSON unico)
 python scripts/run_meta_ads_browser.py \
-  --enrich-only output/02-07-2026_192519/resultados.json --headless
+  --enrich-only output/02-07-2026_19-25-19/resultados.json --headless
 
 # A nuevo archivo
 python scripts/run_meta_ads_browser.py \
   --enrich-only resultados.json --output enriquecidos.json --headless
+
+# Con control de sesion para evitar bloqueo (recrea sesion cada N ads)
+python scripts/run_meta_ads_browser.py \
+  --enrich-only resultados.json --session-per-ads 5 --headless
 ```
 
 ### Retomar ejecucion (append)
@@ -71,7 +75,7 @@ nohup python scripts/run_meta_ads_browser.py \
 | `--limit` | `30` | Limite global por keyword si no se especifica en `--keyword` |
 | `--headless` | `False` | Modo sin ventana |
 | `--no-enrich` | `False` | Solo discovery, sin enrichment |
-| `--output` | `output/DD-MM-YYYY_HHMMSS/resultados.json` | Ruta de salida. Sin `--no-split`, los datos van a `_parts/` |
+| `--output` | `output/DD-MM-YYYY_HH-MM-SS/resultados.json` | Ruta de salida. Sin `--no-split`, los datos van a `_parts/` |
 | `--no-split` | `False` | No dividir por keyword (un solo JSON plano) |
 | `--mode` | `overwrite` | `append` para retomar desde ejecucion anterior |
 | `--resume` | — | JSON o `_parts/` con dominios a dedup (cross-ejecucion) |
@@ -123,7 +127,7 @@ nohup python scripts/run_meta_ads_browser.py \
 Sin `--output`, se genera automaticamente:
 
 ```
-output/02-07-2026_192519/
+output/02-07-2026_19-25-19/
 ├── resultados_parts/
 │   ├── curso.json
 │   ├── marketing.json
@@ -190,7 +194,10 @@ source venv/bin/activate && python -m pytest tests/ -v
 - **Engagement CTA detection**: Descarta WhatsApp/Messenger/tel.
 - **Descripcion limpia**: Filtra ~30 lineas de ruido UI.
 - **Advertiser name**: Busqueda backward desde library ID.
-- **Enrichment**: Dialogo de detalles, seccion del anunciante, usuarios FB/IG, seguidores.
+- **Enrichment**: Dialogo de detalles, prioridad "Detalles del anuncio" sobre "Vincular con un anuncio", seccion del anunciante expandible, usuarios FB/IG, seguidores.
+- **Resumenes expandibles**: Click en "Ver detalles del resumen" / "Ver resumen" para revelar sub-cards ocultas.
+- **Native click**: Clicks via `element.click()` JS nativo para compatibilidad con React de Meta.
+- **Paginacion por sesion**: `--session-per-ads N` recrea sesion cada N ads en modo enrich-only.
 - **Scroll incremental**: Extraccion con tolerancia a scrolls vacios.
 
 ### Persistencia y configuracion (Fase 3.2)
@@ -207,7 +214,7 @@ source venv/bin/activate && python -m pytest tests/ -v
 - **Sesion compartida**: Reutiliza contexto Playwright cada N keywords.
 - **Timeout global**: Limite de minutos para toda la ejecucion.
 - **Formato hora Argentina**: `dd/mm/YYYY HH:MM:SS hs` en logs y datos.
-- **Output con timestamp**: Carpeta `DD-MM-YYYY_HHMMSS` auto-generada.
+- **Output con timestamp**: Carpeta `DD-MM-YYYY_HH-MM-SS` auto-generada.
 
 ---
 

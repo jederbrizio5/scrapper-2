@@ -147,3 +147,18 @@
 - **Contexto**: Los dominios bloqueados (`BLOCKED_DOMAINS`) son fijos en la clase. No hay manera de agregar dominios específicos de una campaña sin modificar el código.
 - **Decisión**: Agregar `extra_blocked_domains: set[str] | None = None` a `AdsExtractor.__init__`. Internamente construye `self._blocked_domains = tuple(sorted(set(BLOCKED_DOMAINS) | extra))`. CLI con `--blocked-domains "tiktok.com,x.com"`.
 - **Consecuencias**: Bloqueo ad-hoc sin modificar código fuente. Ideal para campañas que compiten con dominios específicos.
+
+## 2026-07-02: Dialog priority — "Detalles del anuncio" > "Vincular con un anuncio"
+- **Contexto**: `_find_detail_dialog()` devolvía `dialog[1]` ("Vincular con un anuncio") porque también contiene el texto "Detalles del anuncio" (del botón "Ver detalles del anuncio"). El dialog correcto es `dialog[2]` ("Detalles del anuncio"), el único con sección "Información sobre el anunciante". La posición DOM no era confiable.
+- **Decisión**: `_find_detail_dialog()` busca dialogs con "Detalles del anuncio"/"Ad details"/"Información sobre el anunciante" y **excluye** los que contengan "Vincular con un anuncio"/"Link to an ad". La selección se basa en **contenido**, no en posición DOM. Si no hay match, fallback al dialog "Vincular".
+- **Consecuencias**: Enrichment exitoso para todos los ads. Dialog correcto se elige consistentemente incluso si Meta cambia el orden DOM.
+
+## 2026-07-02: `_native_click()` via JS evaluate en vez de `force=True`
+- **Contexto**: Los clicks con `btn.click(force=True)` de Playwright no disparaban los handlers de React en Facebook. Los botones de Meta son `<div>` con listeners JS, y `force=True` omite verificaciones de actionability pero no ejecuta el evento JS correcto.
+- **Decisión**: Reemplazar todos los `click(force=True)` por `page.evaluate('el => el.click()')` envuelto en `_native_click()`. Aplicado en `_extract_enrichment_from_card`, `_click_inner_detail_button`, `_enter_from_summary`, `_click_advertiser_heading`.
+- **Consecuencias**: Clicks funcionan correctamente en elementos React. Enrichment exitoso para ads donde antes no se abría el diálogo o no se expandía la sección del anunciante.
+
+## 2026-07-02: `_expand_summaries()` para resúmenes coleccionables
+- **Contexto**: Algunos anuncios tienen un botón "Ver detalles del resumen"/"Ver resumen" que expande ~5 sub-cards adicionales con library IDs propios. Sin clickearlos, se perdían esos ads.
+- **Decisión**: Implementar `_expand_summaries()` que busca TODOS los botones con texto "Ver detalles del resumen"/"Ver resumen" y les hace click via `_native_click()`. Se llama en `extract_discovery_ads` antes de `_candidate_cards()` cada scroll. No se clickea "Ver más"/"See more" porque expanden descripciones, no resúmenes.
+- **Consecuencias**: ~5 ads adicionales por resumen expandido. Mayor cobertura de discovery. Dedup por dominio evita duplicados de sub-cards.

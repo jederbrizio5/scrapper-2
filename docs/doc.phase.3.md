@@ -247,12 +247,21 @@ despues.
 ### 6.1 Flujo
 
 1. Busca boton "Ver detalles del anuncio" / "See ad details" en la card
-2. Click con `force=True` (Meta tiene divs superpuestos)
+2. Click via `_native_click()` (`page.evaluate('el => el.click()')`) para
+   compatibilidad con React de Meta
 3. Espera dialogo de detalles
-4. Si es "Ver detalles del resumen" -> sub-flujo `_enter_from_summary`
-5. Dentro del dialogo, busca heading con "anunciante" / "advertiser"
-6. Click para expandir seccion del anunciante
-7. Extrae datos de la seccion expandida
+4. Si el boton contiene "Ver detalles del resumen"/"Ver resumen" ->
+   sub-flujo `_enter_from_summary()` (clickea boton interno y busca dialogo
+   de detalles resultante)
+5. Dentro del dialogo, `_find_detail_dialog()` selecciona por contenido:
+   - Prioriza dialogo con "Detalles del anuncio" + "Información sobre el
+     anunciante"
+   - Excluye dialogo con "Vincular con un anuncio" / "Link to an ad"
+   - Fallback al dialogo "Vincular" si no hay match
+6. Busca heading con "anunciante" / "advertiser" en `h1`-`h4` y
+   `[role=heading]`
+7. Click via `_native_click()` para expandir seccion del anunciante
+8. Extrae datos de la seccion expandida
 
 ### 6.2 Extraccion de Usuarios Sociales (`_parse_social_from_advertiser_section`)
 
@@ -364,7 +373,9 @@ while not suficientes AND quedan intentos:
 ### 8.3 A nivel de interaccion (AdsExtractor)
 
 - **Jitter en delays**: `_jittered_delay()` agrega +/-30% aleatorio
-- **force=True** en clicks (evita bloqueo por elementos superpuestos)
+- **`_native_click()`**: Usa `page.evaluate('el => el.click()')` en vez de
+  `click(force=True)` porque los botones de Meta son `<div>` con listeners
+  React que solo respetan el click JS nativo
 - Multiples selectores CSS para encontrar elementos (fallback progresivo)
 
 ---
@@ -385,6 +396,11 @@ while not suficientes AND quedan intentos:
 | 10 | Landing de texto, no de boton | Landing incorrecta cuando boton iba a WhatsApp | Botones CTA primero, fallback solo si no hay botones |
 | 11 | Callout promocional en desc | "Inscripciones abiertas 15% OFF" en desc | BREAK en `\d+% (OFF|desc|Dto)` |
 | 12 | CTA text en desc | "Visita el sitio web para mas informacion" | Agregado "Visita el sitio web" a `UI_NOISE_LINES` |
+| 13 | Dialog incorrecto en enrichment | `_find_detail_dialog()` devolvia dialog[1] ("Vincular con un anuncio") en vez de dialog[2] ("Detalles del anuncio") | Seleccion por contenido: prioriza "Detalles" + "Información anunciante", excluye "Vincular" |
+| 14 | Clicks no funcionaban en React | `click(force=True)` no disparaba handlers de React en botones `<div>` de Meta | `_native_click()` via `page.evaluate('el => el.click()')` en todos los clicks de enrichment |
+| 15 | Sub-cards ocultas en resumenes | Cards con "Ver detalles del resumen" tenian ~5 sub-cards con library IDs no extraidos | `_expand_summaries()` clickea todos los botones "Ver detalles del resumen"/"Ver resumen" antes de candidate_cards |
+| 16 | Heading "anunciante" no encontrado | `[role=heading]` no cubria todos los headings de Meta (usaban `h2`/`h3`) | Buscar tambien `h1`, `h2`, `h3`, `h4` como fallback a `[role=heading]` |
+| 17 | Boton interno no aparecia inmediatamente | "Ver detalles del anuncio" dentro del dialog de resumen no estaba renderizado al buscar | Polling loop de 5s (10 x 500ms) esperando a que aparezca el boton |
 
 ---
 
@@ -468,6 +484,27 @@ anunciante" expandible.
     logea el estado completo, permitiendo diagnosticar bottlenecks sin
     necesidad de depuracion externa.
 
+13. **`_native_click()` sobre `force=True`**: Los clicks nativos de JS
+    (`el.click()`) disparan los handlers de React en Meta. `force=True`
+    omite verificaciones de Playwright pero no ejecuta el evento JS
+    correcto en elementos `<div>` con listeners React.
+
+14. **Dialog priority por contenido, no por posicion DOM**: La posicion
+    de los dialogs en el DOM de Meta es inestable. Seleccionar por
+    contenido ("Detalles del anuncio" + "Informacion del anunciante")
+    excluyendo "Vincular con un anuncio" es mas robusto que asumir
+    `dialog[2]`.
+
+15. **`_expand_summaries()` antes de candidates**: Los botones "Ver
+    detalles del resumen" expanden sub-cards con library IDs propios.
+    Clickearlos antes de `_candidate_cards()` asegura que se procesen
+    en la misma iteracion de scroll.
+
+16. **Polling en boton interno**: El boton "Ver detalles del anuncio"
+    dentro del dialog de resumen puede tardar en renderizarse. Polling
+    de 10 x 500ms (5s total) con `page.locator` es suficiente sin ser
+    excesivo.
+
 ---
 
 ## 12. Estructura de Archivos
@@ -475,9 +512,9 @@ anunciante" expandible.
 ```
 src/modules/meta_ads/
   acquisition/
-    ads_extractor.py       # Logica principal de extraccion (~1028 lineas)
+    ads_extractor.py       # Logica principal de extraccion (~1080 lineas)
     ads_searcher.py        # Construccion de URL y navegacion (71 lineas)
-    browser_runner.py      # Orquestacion con scroll + timing (~571 lineas)
+    browser_runner.py      # Orquestacion con scroll + timing (~580 lineas)
   browser/
     browser_manager.py     # Inicializacion Chromium + anti-detection (95 lineas)
     session_manager.py     # Contexto/pagina + overrides JS (66 lineas)
@@ -487,7 +524,7 @@ scripts/
   run_meta_ads_browser.py # Entry point CLI (124 lineas)
 tests/
   unit/meta_ads/
-    test_browser_acquisition.py  # 24 tests (18 nuevos Fase 3.2)
+    test_browser_acquisition.py  # 33 tests (18 nuevos Fase 3.2 + 9 correcciones enrichment)
     test_meta_client.py          # 3 tests
     test_parser.py               # 2 tests
 docs/
@@ -561,14 +598,27 @@ enrich_ads(discoveries)
             +-> _find_detail_button(card)
             |   busca por texto: "Ver detalles del anuncio", etc.
             |
-            +-> click(force=True)
+            +-> _native_click(btn)
+            |   page.evaluate('el => el.click()') para React
             |
-            +-> "resumen" en texto del boton?
+            +-> "Ver detalles del resumen" / "Ver resumen" en boton?
             |   si -> _enter_from_summary()
+            |   |    +-> _click_inner_detail_button(dialog)
+            |   |    |   polling 10x500ms espera boton interno
+            |   |    +-> _find_detail_dialog()
+            |   |         busca dialogo con prioridad:
+            |   |         - "Detalles" + "Informacion anunciante"
+            |   |         - excluye "Vincular con un anuncio"
+            |   |         - fallback dialog[0]
+            |   |
             |   no  -> _find_detail_dialog()
+            |         (misma logica que arriba)
             |
             +-> _click_advertiser_heading(dialog)
-            |   busca [role=heading] con "anunciante"/"advertiser"
+            |   busca heading con "anunciante"/"advertiser":
+            |   - [role=heading] primero
+            |   - h1, h2, h3, h4 como fallback
+            |   - _native_click() para expandir
             |
             +-> _parse_social_from_advertiser_section(text)
             |   FB: @username o Identificador: N
@@ -605,6 +655,12 @@ enrich_ads(discoveries)
 | 13 | **Bloqueo extra por CLI** | `--blocked-domains "tiktok.com,x.com"` agrega dominios a BLOCKED_DOMAINS sin modificar código. |
 | 14 | **Sort mode configurable** | `--sort-mode total_impressions|relevancy_monthly_grouped`. Default: `total_impressions`. |
 | 15 | **Force overwrite** | `--force` salta la confirmación al sobreescribir archivo existente. |
+| 16 | **Expandir resúmenes en discovery** | `_expand_summaries()` clickea "Ver detalles del resumen"/"Ver resumen" antes de candidate_cards para revelar sub-cards. |
+| 17 | **Native click para React** | `_native_click()` con `page.evaluate('el => el.click()')` reemplaza `click(force=True)` en todo enrichment. |
+| 18 | **Dialog priority por contenido** | `_find_detail_dialog()` prioriza "Detalles del anuncio" + "Información anunciante", excluye "Vincular con un anuncio". |
+| 19 | **Polling en boton interno** | `_click_inner_detail_button()` espera hasta 5s con polling 10x500ms a que aparezca el botón dentro del dialog. |
+| 20 | **Headings h1-h4 como fallback** | `_click_advertiser_heading()` busca también `h1`-`h4` si `[role=heading]` no encuentra match. |
+| 21 | **Session-per-ads** | `--session-per-ads N` recrea sesión cada N ads en enrich-only (default 5) para seguridad anti-ban. |
 
 ### 15.2 Filtros Efectivos
 
@@ -656,9 +712,9 @@ CLI (run_meta_ads_browser.py)
 ```
 src/modules/meta_ads/
   acquisition/
-    ads_extractor.py       # ~1028 lineas (+extra_blocked_domains, extracted_at)
+    ads_extractor.py       # ~1080 lineas (+expand_summaries, native_click, dialog priority)
     ads_searcher.py        # 71 lineas (sin cambios)
-    browser_runner.py      # ~571 lineas (refactor mayor)
+    browser_runner.py      # ~580 lineas (+session-per-ads, enrich-only mejorado)
   browser/
     browser_manager.py     # 95 lineas (sin cambios)
     session_manager.py     # 66 lineas (sin cambios)
@@ -668,7 +724,7 @@ scripts/
   run_meta_ads_browser.py # 124 lineas (CLI completo)
 tests/
   unit/meta_ads/
-    test_browser_acquisition.py  # 24 tests (18 nuevos)
+    test_browser_acquisition.py  # 33 tests (18 nuevos + 9 correcciones)
     test_meta_client.py          # 3 tests (sin cambios)
     test_parser.py               # 2 tests (sin cambios)
 docs/

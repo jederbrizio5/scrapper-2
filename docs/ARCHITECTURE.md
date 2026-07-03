@@ -11,38 +11,45 @@ La arquitectura está dividida de forma modular para facilitar el mantenimiento 
 * **`src/models/`**: Modelos ORM SQLAlchemy.
 * **`src/repositories/`**: Operaciones de persistencia encapsuladas.
 
-Nota: `src/core/`, `src/services/` y `src/utils/` no existen actualmente.
-
 ## Flujo de Datos
 
-Flujo implementado para Meta Ads API:
+Flujo implementado para adquisicion por navegador (Playwright):
+
+```text
+Configuracion de busqueda (CLI)
+  -> BrowserManager / SessionManager (anti-deteccion)
+  -> AdsSearcher (navegacion + filtros)
+  -> AdsExtractor.discovery (scroll + cards + resumenes)
+  -> AdsExtractor.enrichment (dialogo + seccion anunciante)
+  -> DTOs BrowserAdResult (discovery + enrichment)
+  -> JSON (checkpoint por keyword)
+```
+
+Flujo secundario para Meta Ads API:
 
 ```text
 SearchRequest -> MetaClient -> MetaParser -> SearchResponse[Ad]
 ```
 
-Flujo implementado para persistencia:
-
-```text
-Modelo ORM -> Repositorio -> Sesion SQLAlchemy -> SQLite
-```
-
 Regla arquitectonica: `MetaClient` no debe importar repositorios ni modelos ORM. La union entre adquisicion y persistencia debe vivir en un orquestador futuro.
 
-## Direccion Arquitectonica Actual
+## Enrichment
 
-La adquisicion principal debe basarse en navegador con Playwright, no en la API de Meta, porque la API puede no cubrir anuncios comerciales utiles para este proyecto.
+El enrichment abre cada `ad_library_url` individualmente, busca el dialogo
+"Detalles del anuncio" (excluyendo "Vincular con un anuncio"), expande la
+seccion "Informacion sobre el anunciante" via `_native_click()`, y extrae
+usuarios sociales FB/IG y seguidores del texto de la seccion expandida.
 
-Flujo objetivo para Fase 3:
+Los resumenes ("Ver detalles del resumen") se expanden automaticamente
+durante discovery para revelar sub-cards.
 
-```text
-Configuracion de busqueda
-  -> BrowserManager / SessionManager
-  -> AdsSearcher
-  -> AdsExtractor
-  -> DTOs internos
-  -> persistencia posterior definida por producto
-```
+Reglas:
+
+* tiempos configurables.
+* reintentos limitados.
+* logs con contexto.
+* modo visible para depuracion.
+* tests unitarios con mocks.
 
 Reglas para navegador:
 

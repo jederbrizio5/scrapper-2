@@ -13,3 +13,4 @@ data/raw/
 data/processed/
 data/cache/
 scripts/venv/
+debug_*.png
