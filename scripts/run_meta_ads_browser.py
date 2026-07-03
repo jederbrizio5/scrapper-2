@@ -118,7 +118,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _default_output() -> str:
-    now = datetime.now(ARG_TZ).strftime("%d-%m-%Y_%H%M%S")
+    now = datetime.now(ARG_TZ).strftime("%d-%m-%Y_%H-%M-%S")
     return f"output/{now}/resultados.json"
 
 

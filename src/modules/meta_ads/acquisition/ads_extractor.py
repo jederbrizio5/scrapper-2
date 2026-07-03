@@ -204,6 +204,37 @@ class AdsExtractor:
             media=[Media(type="landing", url=discovery.landing_url)],
         )
 
+    SUMMARY_BUTTON_TEXTS: tuple[str, ...] = (
+        "Ver detalles del resumen",
+        "Ver resumen",
+    )
+
+    def _expand_summaries(self) -> None:
+        """Expande cards agrupados clickeando 'Ver detalles del resumen' / 'Ver más'.
+
+        Algunos anuncios aparecen agrupados bajo un card resumen que requiere
+        un click para revelar los anuncios individuales con su propio library_id.
+        """
+        for text in self.SUMMARY_BUTTON_TEXTS:
+            try:
+                buttons = self.page.query_selector_all(
+                    f'button:text-is("{text}"), [role=button]:text-is("{text}"), div:text-is("{text}")'
+                )
+                for btn in buttons:
+                    try:
+                        if not self.page.evaluate(
+                            "el => el.offsetParent !== null", btn
+                        ):
+                            continue
+                        logger.debug("Expandiendo resumen: '%s'", text)
+                        self._native_click(btn)
+                        self.page.wait_for_timeout(800)
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+        self.page.wait_for_timeout(1500)
+
     def extract_discovery_ads(
         self,
         keyword: str,
@@ -220,6 +251,7 @@ class AdsExtractor:
                 saltan antes de la extracción costosa (query_selector_all).
         """
         skip = set(skip_library_ids) if skip_library_ids else set()
+        self._expand_summaries()
         cards = self._candidate_cards()
         self.stats["cards_found"] += len(cards)
         logger.info("Candidatos encontrados keyword=%s count=%s", keyword, len(cards))
@@ -423,32 +455,39 @@ class AdsExtractor:
     def _extract_enrichment_from_card(
         self, card: ElementHandle, library_id: str
     ) -> BrowserAdEnrichment | None:
+        step = "init"
         try:
             button = self._find_detail_button(card)
-            detail_dialog = None
 
             if button:
-                button.click(timeout=5000, force=True)
-                self.page.wait_for_timeout(self._jittered_delay())
+                step = "click_outer"
+                self._native_click(button)
+                self.page.wait_for_timeout(self._jittered_delay() + 2000)
 
-                btn_text = self._safe_inner_text(button).strip()
-                if "resumen" in btn_text.lower():
-                    detail_dialog = self._enter_from_summary()
-                else:
-                    detail_dialog = self._find_detail_dialog()
-            else:
-                detail_dialog = self._find_detail_dialog()
+            step = "find_dialog"
+            detail_dialog = self._find_detail_dialog()
 
             if not detail_dialog:
-                logger.warning(
-                    "Dialog de detalles no encontrado library_id=%s", library_id
-                )
+                logger.warning("Dialog no encontrado library_id=%s", library_id)
+                try:
+                    self.page.screenshot(
+                        path=f"debug_enrich_{library_id}.png", full_page=True
+                    )
+                except Exception:
+                    pass
                 self._close_details()
                 return BrowserAdEnrichment(
                     library_id=library_id,
                     extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
                 )
 
+            # Expand: clic al boton "Ver detalles del anuncio" DENTRO del dialogo
+            # (el primer click abre el dialogo "Vincular con un anuncio",
+            #  este segundo click revela la seccion del anunciante)
+            step = "expand_inner"
+            self._click_inner_detail_button(detail_dialog)
+
+            step = "click_heading"
             self._click_advertiser_heading(detail_dialog)
             self.page.wait_for_timeout(1500)
 
@@ -470,7 +509,10 @@ class AdsExtractor:
             )
         except Exception as exc:
             logger.warning(
-                "No se pudo enriquecer library_id=%s error=%s", library_id, exc
+                "Excepcion en enrichment library_id=%s step=%s error=%s",
+                library_id,
+                step,
+                exc,
             )
             self._close_details()
             return BrowserAdEnrichment(
@@ -485,6 +527,60 @@ class AdsExtractor:
             if library_id in self._safe_inner_text(card):
                 return card
         return None
+
+    def _native_click(self, element: ElementHandle, timeout: int = 5000) -> None:
+        elem_text = ""
+        try:
+            elem_text = f" ({element.inner_text()[:50].strip()})"
+        except Exception:
+            pass
+        try:
+            element.evaluate("el => el.click()")
+            logger.debug("Native JS click OK%s", elem_text)
+        except Exception:
+            logger.debug("Fallback click force%s", elem_text)
+            element.click(timeout=timeout, force=True)
+
+    def _click_inner_detail_button(self, dialog: ElementHandle) -> None:
+        """Clickea 'Ver detalles del anuncio' dentro del dialogo para expandir info del anunciante."""
+        for text in self.DETAIL_BUTTON_TEXTS:
+            try:
+                btn = dialog.query_selector(f'text="{text}"')
+                if btn:
+                    try:
+                        self._native_click(btn)
+                        self.page.wait_for_timeout(2000)
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                continue
+
+        for text in self.DETAIL_BUTTON_TEXTS:
+            for _ in range(10):
+                try:
+                    btn = dialog.query_selector(f'text="{text}"')
+                    if btn:
+                        self._native_click(btn)
+                        self.page.wait_for_timeout(2000)
+                        return
+                except Exception:
+                    pass
+                self.page.wait_for_timeout(500)
+
+        try:
+            buttons = dialog.query_selector_all("button, [role=button]")
+            for btn in buttons:
+                btn_text = self._safe_inner_text(btn).strip()
+                if any(t.lower() in btn_text.lower() for t in self.DETAIL_BUTTON_TEXTS):
+                    try:
+                        self._native_click(btn)
+                        self.page.wait_for_timeout(2000)
+                    except Exception:
+                        pass
+                    return
+        except Exception:
+            pass
 
     def _find_detail_button(self, card: ElementHandle) -> ElementHandle | None:
         for text in self.DETAIL_BUTTON_TEXTS:
@@ -504,27 +600,48 @@ class AdsExtractor:
         return None
 
     def _enter_from_summary(self) -> ElementHandle | None:
-        dialogs = self.page.query_selector_all('div[role="dialog"]')
-        for dialog in dialogs:
+        for selector in (
+            'div[role="dialog"]',
+            'div[aria-modal="true"]',
+            'div[data-testid="ad-details-panel"]',
+        ):
             try:
-                text = self._safe_inner_text(dialog)
-                if "Ver detalles del anuncio" not in text:
-                    continue
-                summary_id = id(dialog)
-                buttons = dialog.query_selector_all("button, [role=button]")
-                for btn in buttons:
-                    btn_text = self._safe_inner_text(btn).strip()
-                    if "detalles del anuncio" in btn_text.lower():
-                        btn.click(timeout=5000, force=True)
-                        self.page.wait_for_timeout(self._jittered_delay() + 2000)
-                        detail = self._find_detail_dialog(exclude_id=summary_id)
-                        if detail:
-                            return detail
-                        if "Información sobre el anunciante" in self._safe_inner_text(
-                            dialog
-                        ):
-                            return dialog
-                        return dialog
+                elements = (
+                    self.page.query_selector_all(selector)
+                    if "role" in selector or "testid" in selector
+                    else [self.page.query_selector(selector)]
+                )
+                for element in (
+                    elements
+                    if isinstance(elements, list)
+                    else [elements]
+                    if elements
+                    else []
+                ):
+                    try:
+                        text = self._safe_inner_text(element)
+                        if "Ver detalles del anuncio" not in text:
+                            continue
+                        summary_id = id(element)
+                        buttons = element.query_selector_all("button, [role=button]")
+                        for btn in buttons:
+                            btn_text = self._safe_inner_text(btn).strip()
+                            if "detalles del anuncio" in btn_text.lower():
+                                self._native_click(btn)
+                                self.page.wait_for_timeout(
+                                    self._jittered_delay() + 2000
+                                )
+                                detail = self._find_detail_dialog(exclude_id=summary_id)
+                                if detail:
+                                    return detail
+                                if (
+                                    "Información sobre el anunciante"
+                                    in self._safe_inner_text(element)
+                                ):
+                                    return element
+                                return element
+                    except Exception:
+                        continue
             except Exception:
                 continue
         return None
@@ -532,24 +649,121 @@ class AdsExtractor:
     def _find_detail_dialog(
         self, *, exclude_id: int | None = None
     ) -> ElementHandle | None:
+        # Strategy 1: role=dialog (standard popup)
+        # Preferir el dialog completo "Detalles del anuncio" sobre
+        # el dialog limitado "Vincular con un anuncio".
+        # Ambos contienen "Detalles del anuncio" (el limitado tiene el boton
+        # "Ver detalles del anuncio"), asi que hay que excluir por "Vincular".
         dialogs = self.page.query_selector_all('div[role="dialog"]')
+
+        # Phase 1: buscar dialog completo (tiene info del anunciante)
         for dialog in dialogs:
             try:
                 if exclude_id is not None and id(dialog) == exclude_id:
                     continue
                 text = self._safe_inner_text(dialog)
-                if "Detalles del anuncio" in text or "Ad details" in text:
+                if any(
+                    t in text
+                    for t in (
+                        "Detalles del anuncio",
+                        "Ad details",
+                        "Información sobre el anunciante",
+                    )
+                ) and not any(
+                    t in text
+                    for t in (
+                        "Vincular con un anuncio",
+                        "Link to an ad",
+                    )
+                ):
+                    logger.debug("Dialog encontrado via texto=Detalles del anuncio")
                     return dialog
             except Exception:
                 continue
+
+        # Phase 2: fallback al dialog limitado "Vincular con un anuncio"
+        for dialog in dialogs:
+            try:
+                if exclude_id is not None and id(dialog) == exclude_id:
+                    continue
+                text = self._safe_inner_text(dialog)
+                if any(
+                    t in text
+                    for t in (
+                        "Vincular con un anuncio",
+                        "Link to an ad",
+                    )
+                ):
+                    logger.debug("Dialog encontrado via texto=Vincular con un anuncio")
+                    return dialog
+            except Exception:
+                continue
+
+        # Strategy 2: aria-modal or aria-label panels (used on ?id=... pages)
+        for selector in (
+            'div[aria-modal="true"]',
+            'div[aria-label="Detalles"]',
+            'div[aria-label="Details"]',
+            'div[aria-label="Detalles del anuncio"]',
+            'div[data-testid="ad-details-panel"]',
+        ):
+            try:
+                container = self.page.query_selector(selector)
+                if container is not None:
+                    logger.debug("Dialog encontrado via selector=%s", selector)
+                    return container
+            except Exception:
+                continue
+
+        # Strategy 3: section/div with advertiser heading text
+        try:
+            for selector in ("section", 'div[role="complementary"]', "aside"):
+                elements = self.page.query_selector_all(selector)
+                for el in elements:
+                    try:
+                        text = self._safe_inner_text(el)
+                        if (
+                            "Información sobre el anunciante" in text
+                            or "Advertiser Information" in text
+                        ):
+                            logger.debug(
+                                "Dialog encontrado via texto advertiser en %s", selector
+                            )
+                            return el
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        # Strategy 4: any visible element containing the advertiser heading
+        # (some ads embed details inline instead of a modal dialog)
+        try:
+            body = self.page.query_selector("body")
+            if body:
+                for candidate in body.query_selector_all("div, section, article"):
+                    try:
+                        ct = self._safe_inner_text(candidate)
+                        if (
+                            "Información sobre el anunciante" in ct
+                            or "Advertiser Information" in ct
+                        ):
+                            logger.debug(
+                                "Dialog encontrado via texto advertiser en body fallback"
+                            )
+                            return candidate
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
         return None
 
     def _click_advertiser_heading(self, dialog: ElementHandle) -> None:
-        headings = dialog.query_selector_all("[role=heading]")
+        headings = dialog.query_selector_all("h1, h2, h3, h4, [role=heading]")
         for heading in headings:
             ht = self._safe_inner_text(heading).strip()
             if "anunciante" in ht.lower() or "advertiser" in ht.lower():
-                heading.click(timeout=3000, force=True)
+                self._native_click(heading, timeout=3000)
                 return
 
     @staticmethod
