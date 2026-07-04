@@ -122,8 +122,14 @@ class MetaAdsBrowserRunner:
                         e = BrowserAdEnrichment(**enrich_data) if enrich_data else None
                         results.append(BrowserAdResult(discovery=d, enrichment=e))
                     loaded += len(raw)
+                self.known_library_ids |= {r.discovery.library_id for r in results}
+                self.known_domains |= {r.discovery.domain for r in results}
                 logger.info(
-                    "Append: cargados %d resultados desde %s/", loaded, parts_dir.name
+                    "Append: cargados %d resultados desde %s/ (dedup=%d libs, %d dominios)",
+                    loaded,
+                    parts_dir.name,
+                    len(self.known_library_ids),
+                    len(self.known_domains),
                 )
             elif Path(output_path).exists():
                 try:
@@ -134,10 +140,14 @@ class MetaAdsBrowserRunner:
                         d = BrowserAdDiscovery(**disc_data)
                         e = BrowserAdEnrichment(**enrich_data) if enrich_data else None
                         results.append(BrowserAdResult(discovery=d, enrichment=e))
+                    self.known_library_ids |= {r.discovery.library_id for r in results}
+                    self.known_domains |= {r.discovery.domain for r in results}
                     logger.info(
-                        "Append: cargados %d resultados previos desde %s",
+                        "Append: cargados %d resultados previos desde %s (dedup=%d libs, %d dominios)",
                         len(raw),
                         output_path,
+                        len(self.known_library_ids),
+                        len(self.known_domains),
                     )
                 except (FileNotFoundError, json.JSONDecodeError) as exc:
                     logger.warning("No se pudieron cargar resultados previos: %s", exc)
@@ -213,6 +223,10 @@ class MetaAdsBrowserRunner:
                             **s,
                         }
                         results.extend(kw_results)
+                        self.known_library_ids |= {
+                            r.discovery.library_id for r in kw_results
+                        }
+                        self.known_domains |= {r.discovery.domain for r in kw_results}
                         last_exc = None
                         break
                     except AdsExtractor.MetaBlockedError as block_exc:
@@ -378,11 +392,19 @@ class MetaAdsBrowserRunner:
         raw, parts_dir, source = self._resolve_enrich_source(input_path)
 
         logger.info("Enrichment-only: %d discoveries desde %s", len(raw), source)
+        logger.info("=" * 70)
+        logger.info("  MODO ENRICHMENT ONLY")
+        logger.info("=" * 70)
+        logger.info("  Discoveries          : %d", len(raw))
+        logger.info("  Fuente               : %s", source)
         logger.info(
-            "Sesion por cada %d ads | %s",
+            "  Sesion por cada %d ads | %s",
             self.session_per_ads,
             "headless" if headless else "visible",
         )
+        logger.info("  Enriquecimiento      : si (forzado)")
+        logger.info("=" * 70)
+        logger.info("")
         discoveries = []
         for entry in raw:
             disc = entry.get("discovery", entry)

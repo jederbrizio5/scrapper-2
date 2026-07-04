@@ -139,8 +139,11 @@ def main() -> None:
 
     split_by_keyword = not args.no_split
 
-    output_path = args.output or _default_output()
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    if args.enrich_only:
+        output_path = args.output
+    else:
+        output_path = args.output or _default_output()
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     extra_blocked = set()
     if args.blocked_domains:
