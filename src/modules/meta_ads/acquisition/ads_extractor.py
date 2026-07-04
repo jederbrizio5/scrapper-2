@@ -464,11 +464,27 @@ class AdsExtractor:
                 self._native_click(button)
                 self.page.wait_for_timeout(self._jittered_delay() + 2000)
 
-            step = "find_dialog"
-            detail_dialog = self._find_detail_dialog()
+                # Detectar si es boton "resumen" y usar path especial
+                btn_text = self._safe_inner_text(button).strip().lower()
+                if "resumen" in btn_text or "summary" in btn_text:
+                    logger.info(
+                        "Boton resumen detectado, usando _enter_from_summary library_id=%s",
+                        library_id,
+                    )
+                    step = "enter_from_summary"
+                    detail_dialog = self._enter_from_summary()
+                else:
+                    step = "find_dialog"
+                    detail_dialog = self._find_detail_dialog()
+            else:
+                step = "find_dialog"
+                detail_dialog = self._find_detail_dialog()
 
             if not detail_dialog:
-                logger.warning("Dialog no encontrado library_id=%s", library_id)
+                logger.warning(
+                    "Dialog no encontrado library_id=%s, intentando fallback ad_library_url",
+                    library_id,
+                )
                 try:
                     self.page.screenshot(
                         path=f"debug_enrich_{library_id}.png", full_page=True
@@ -476,6 +492,72 @@ class AdsExtractor:
                 except Exception:
                     pass
                 self._close_details()
+
+                # Fallback: navegar directamente a la URL del ad en la libreria
+                ad_url = f"https://www.facebook.com/ads/library/?id={library_id}"
+                logger.info("Fallback: navigando a %s", ad_url)
+                try:
+                    self.page.goto(ad_url, wait_until="networkidle")
+                    self.page.wait_for_timeout(3000)
+
+                    # Buscar cards en la pagina dedicada
+                    cards = self._candidate_cards()
+                    if cards:
+                        card = self._find_card_by_library_id(cards, library_id)
+                        if card:
+                            # Reintentar extraccion con el card encontrado
+                            logger.info(
+                                "Fallback: card encontrado, reintentando extraccion"
+                            )
+                            button = self._find_detail_button(card)
+                            if button:
+                                self._native_click(button)
+                                self.page.wait_for_timeout(
+                                    self._jittered_delay() + 2500
+                                )
+                                detail_dialog = self._find_detail_dialog()
+
+                                if detail_dialog:
+                                    logger.info(
+                                        "Fallback: dialog encontrado, expandiendo"
+                                    )
+                                    self._click_inner_detail_button(detail_dialog)
+                                    self._click_advertiser_heading(detail_dialog)
+                                    self.page.wait_for_timeout(1500)
+
+                                    full_text = self._safe_inner_text(detail_dialog)
+                                    fb_user, ig_user = (
+                                        self._parse_social_from_advertiser_section(
+                                            full_text
+                                        )
+                                    )
+                                    fb_followers, ig_followers = (
+                                        self._parse_followers_from_advertiser_section(
+                                            full_text
+                                        )
+                                    )
+                                    self._close_details()
+
+                                    return BrowserAdEnrichment(
+                                        library_id=library_id,
+                                        facebook_user=fb_user,
+                                        instagram_user=ig_user,
+                                        facebook_followers=fb_followers,
+                                        instagram_followers=ig_followers,
+                                        advertiser_info=full_text[:2000]
+                                        if full_text
+                                        else None,
+                                        extracted_at=datetime.now(ARG_TZ).strftime(
+                                            "%d/%m/%Y %H:%M:%S hs"
+                                        ),
+                                    )
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "Fallback tambien fallo library_id=%s: %s",
+                        library_id,
+                        fallback_exc,
+                    )
+
                 return BrowserAdEnrichment(
                     library_id=library_id,
                     extracted_at=datetime.now(ARG_TZ).strftime("%d/%m/%Y %H:%M:%S hs"),
@@ -600,6 +682,9 @@ class AdsExtractor:
         return None
 
     def _enter_from_summary(self) -> ElementHandle | None:
+        """Navega desde dialogo de resumen hasta dialogo completo de detalles."""
+        logger.debug("_enter_from_summary: buscando dialogo de resumen")
+
         for selector in (
             'div[role="dialog"]',
             'div[aria-modal="true"]',
@@ -620,30 +705,87 @@ class AdsExtractor:
                 ):
                     try:
                         text = self._safe_inner_text(element)
-                        if "Ver detalles del anuncio" not in text:
+                        text_lower = text.lower()
+
+                        # Buscar dialogo que contenga "datos resumidos" o "resumen"
+                        # o que tenga boton "Ver detalles del anuncio"
+                        has_summary = any(
+                            t in text_lower
+                            for t in ("datos resumidos", "resumen", "summary")
+                        )
+                        has_detail_button = any(
+                            t in text_lower
+                            for t in ("ver detalles del anuncio", "view ad details")
+                        )
+
+                        if not has_summary and not has_detail_button:
                             continue
+
+                        logger.debug(
+                            "_enter_from_summary: dialogo encontrado has_summary=%s has_detail_button=%s text_preview=%s",
+                            has_summary,
+                            has_detail_button,
+                            text[:100].replace("\n", " "),
+                        )
+
                         summary_id = id(element)
                         buttons = element.query_selector_all("button, [role=button]")
+
+                        # Buscar boton "Ver detalles del anuncio" o similar
                         for btn in buttons:
-                            btn_text = self._safe_inner_text(btn).strip()
-                            if "detalles del anuncio" in btn_text.lower():
+                            btn_text = self._safe_inner_text(btn).strip().lower()
+                            if any(
+                                t in btn_text
+                                for t in (
+                                    "detalles del anuncio",
+                                    "ad details",
+                                    "ver detalles",
+                                )
+                            ):
+                                logger.debug(
+                                    "_enter_from_summary: clickeando boton='%s'",
+                                    btn_text[:50],
+                                )
                                 self._native_click(btn)
                                 self.page.wait_for_timeout(
-                                    self._jittered_delay() + 2000
+                                    self._jittered_delay() + 2500
                                 )
+
+                                # Buscar nuevo dialogo excluyendo el actual
                                 detail = self._find_detail_dialog(exclude_id=summary_id)
                                 if detail:
+                                    logger.debug(
+                                        "_enter_from_summary: nuevo dialogo encontrado"
+                                    )
                                     return detail
+
+                                # Verificar si el dialogo se expando in-place
+                                new_text = self._safe_inner_text(element)
                                 if (
-                                    "Información sobre el anunciante"
-                                    in self._safe_inner_text(element)
+                                    "información sobre el anunciante"
+                                    in new_text.lower()
+                                    or "advertiser information" in new_text.lower()
                                 ):
+                                    logger.debug(
+                                        "_enter_from_summary: dialogo expandido in-place"
+                                    )
                                     return element
+
+                                # Retornar el dialogo actual como fallback
+                                logger.debug(
+                                    "_enter_from_summary: retornando dialogo actual como fallback"
+                                )
                                 return element
-                    except Exception:
+                    except Exception as e:
+                        logger.debug("_enter_from_summary: excepcion en dialogo: %s", e)
                         continue
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    "_enter_from_summary: excepcion en selector %s: %s", selector, e
+                )
                 continue
+
+        logger.debug("_enter_from_summary: no se encontro dialogo de resumen")
         return None
 
     def _find_detail_dialog(
@@ -655,6 +797,7 @@ class AdsExtractor:
         # Ambos contienen "Detalles del anuncio" (el limitado tiene el boton
         # "Ver detalles del anuncio"), asi que hay que excluir por "Vincular".
         dialogs = self.page.query_selector_all('div[role="dialog"]')
+        logger.debug("_find_detail_dialog: %d dialogs role=dialog", len(dialogs))
 
         # Phase 1: buscar dialog completo (tiene info del anunciante)
         for dialog in dialogs:
@@ -662,20 +805,29 @@ class AdsExtractor:
                 if exclude_id is not None and id(dialog) == exclude_id:
                     continue
                 text = self._safe_inner_text(dialog)
-                if any(
+                has_detail = any(
                     t in text
                     for t in (
                         "Detalles del anuncio",
                         "Ad details",
                         "Información sobre el anunciante",
                     )
-                ) and not any(
+                )
+                has_link = any(
                     t in text
                     for t in (
                         "Vincular con un anuncio",
                         "Link to an ad",
                     )
-                ):
+                )
+                logger.debug(
+                    "  dialog id=%d has_detail=%s has_link=%s text_preview=%s",
+                    id(dialog),
+                    has_detail,
+                    has_link,
+                    text[:100].replace("\n", " "),
+                )
+                if has_detail and not has_link:
                     logger.debug("Dialog encontrado via texto=Detalles del anuncio")
                     return dialog
             except Exception:
@@ -700,6 +852,7 @@ class AdsExtractor:
                 continue
 
         # Strategy 2: aria-modal or aria-label panels (used on ?id=... pages)
+        logger.debug("_find_detail_dialog: strategy 2 (aria-modal/testid)")
         for selector in (
             'div[aria-modal="true"]',
             'div[aria-label="Detalles"]',
@@ -760,11 +913,43 @@ class AdsExtractor:
 
     def _click_advertiser_heading(self, dialog: ElementHandle) -> None:
         headings = dialog.query_selector_all("h1, h2, h3, h4, [role=heading]")
+        logger.debug("Advertiser heading: %d headings encontrados", len(headings))
         for heading in headings:
-            ht = self._safe_inner_text(heading).strip()
+            try:
+                ht = self._safe_inner_text(heading).strip()
+                logger.debug("  heading text='%s'", ht[:80])
+            except Exception:
+                continue
             if "anunciante" in ht.lower() or "advertiser" in ht.lower():
-                self._native_click(heading, timeout=3000)
+                logger.debug("Advertiser heading: clickeando '%s'", ht[:50])
+                try:
+                    self._native_click(heading, timeout=3000)
+                except Exception as exc:
+                    logger.debug("Native click fallo, intentando force: %s", exc)
+                    try:
+                        heading.click(force=True, timeout=3000)
+                    except Exception as exc2:
+                        logger.warning(
+                            "No se pudo clickear advertiser heading: %s", exc2
+                        )
                 return
+
+        # Fallback: buscar por aria-label o data-testid
+        for selector in (
+            '[aria-label*="anunciante" i]',
+            '[aria-label*="advertiser" i]',
+            '[data-testid*="advertiser"]',
+        ):
+            try:
+                el = dialog.query_selector(selector)
+                if el:
+                    logger.debug("Advertiser heading: fallback via %s", selector)
+                    self._native_click(el, timeout=3000)
+                    return
+            except Exception:
+                continue
+
+        logger.debug("Advertiser heading: no encontrado en dialog")
 
     @staticmethod
     def _parse_followers_count(raw: str) -> str:
