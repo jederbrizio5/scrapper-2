@@ -1,0 +1,93 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "primary",
+  "instructions": [
+    "AGENTS.md",
+    ".opencode/agents/primary.md",
+    "docs/MAESTRO.MD",
+    "docs/ARCHITECTURE.md"
+  ],
+  "references": {
+    "docs": {
+      "path": "docs",
+      "description": "Documentacion del proyecto: arquitectura, fases, ADRs, guias para agentes y reglas de desarrollo."
+    },
+    "phases": {
+      "path": "docs/phases",
+      "description": "Documentacion detallada de cada fase completada y su implementacion."
+    },
+    "scripts": {
+      "path": "scripts",
+      "description": "Scripts de instalacion, ejecucion, tests, lint, formato y validacion."
+    }
+  },
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
+  "agent": {
+    "primary": {
+      "model": "ollama/qwen2.5-coder:7b",
+      "mode": "primary",
+      "description": "Agente principal del proyecto Meta Ads Prospecting System. Orquesta tareas, delega a subagentes especializados y coordina el flujo de trabajo completo.",
+      "permission": {
+        "bash": "allow"
+      }
+    },
+    "scraper": {
+      "mode": "subagent",
+      "description": "Especialista en scraping con Playwright y anti-deteccion para Meta Ads Library. Encargado del modulo acquisition, browser, parser y DTOs. Usar cuando se trabaje en ads_extractor, browser_runner, ads_searcher, browser_manager, session_manager o metodos anti-bloqueo.",
+      "permission": {
+        "edit": "ask",
+        "bash": "ask"
+      }
+    },
+    "db": {
+      "mode": "subagent",
+      "description": "Especialista en base de datos, modelos SQLAlchemy, migraciones Alembic y repositorios. Encargado de src/models, src/repositories, src/database, migrations/. Usar para tareas de esquema, migraciones, consultas y persistencia.",
+      "permission": {
+        "edit": "ask",
+        "bash": "ask"
+      }
+    },
+    "tester": {
+      "mode": "subagent",
+      "description": "Especialista en testing con pytest, mocks (MagicMock, responses) y cobertura. Encargado de tests/ unitarios y de integracion. Usar para escribir, corregir o ejecutar tests.",
+      "permission": {
+        "edit": "ask",
+        "bash": "ask"
+      }
+    },
+    "reviewer": {
+      "mode": "subagent",
+      "description": "Revisor de codigo que verifica calidad, estilo (Ruff, type hints), cumplimiento de reglas del proyecto y documentacion. NO edita archivos. Usar antes de commit o PR para validar que todo cumple los estandares.",
+      "permission": {
+        "edit": "deny",
+        "bash": "ask"
+      }
+    }
+  },
+  "command": {
+    "scrape": {
+      "description": "Ejecuta el scraper de Meta Ads Library con argumentos CLI. Ej: scrape --keyword curso:30 --headless --no-enrich"
+    },
+    "test": {
+      "description": "Ejecuta los tests del proyecto con pytest."
+    },
+    "lint": {
+      "description": "Ejecuta ruff linting para verificar calidad de codigo."
+    },
+    "check": {
+      "description": "Ejecuta validacion completa: format + lint + tests. Obligatorio antes de cerrar cualquier tarea."
+    }
+  },
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp"],
+      "enabled": true,
+      "env": {
+        "BROWSER": "chromium"
+      }
+    }
+  }
+}
