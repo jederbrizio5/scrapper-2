@@ -1,5 +1,5 @@
 ---
-description: Escribe y actualiza documentacion del proyecto: README, ADRs, fases, guias. No ejecuta comandos.
+description: "Escribe y actualiza documentacion del proyecto: README, ADRs, fases, guias. No ejecuta comandos."
 mode: subagent
 steps: 15
 permission:

@@ -1,5 +1,5 @@
 ---
-description: Gestiona ramas, commits, PRs y merge. Solo comandos git y gh. No edita archivos. Usar para operaciones de versionado: crear rama, commit, push, PR, merge.
+description: "Gestiona ramas, commits, PRs y merge. Solo comandos git y gh. No edita archivos. Usar para operaciones de versionado: crear rama, commit, push, PR, merge."
 mode: subagent
 steps: 15
 permission:
