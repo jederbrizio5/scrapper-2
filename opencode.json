@@ -22,11 +22,12 @@
     }
   },
   "skills": {
-    "paths": [".opencode/skills"]
+    "paths": [
+      ".opencode/skills"
+    ]
   },
   "agent": {
     "primary": {
-      "model": "ollama/qwen2.5-coder:7b",
       "mode": "primary",
       "description": "Agente principal del proyecto Meta Ads Prospecting System. Orquesta tareas, delega a subagentes especializados y coordina el flujo de trabajo completo.",
       "permission": {
@@ -35,7 +36,7 @@
     },
     "scraper": {
       "mode": "subagent",
-      "description": "Especialista en scraping con Playwright y anti-deteccion para Meta Ads Library. Encargado del modulo acquisition, browser, parser y DTOs. Usar cuando se trabaje en ads_extractor, browser_runner, ads_searcher, browser_manager, session_manager o metodos anti-bloqueo.",
+      "description": "Especialista en scraping con Playwright y anti-deteccion para Meta Ads Library. Encargado del modulo acquisition, browser, parser y DTOs.",
       "permission": {
         "edit": "ask",
         "bash": "ask"
@@ -43,7 +44,7 @@
     },
     "db": {
       "mode": "subagent",
-      "description": "Especialista en base de datos, modelos SQLAlchemy, migraciones Alembic y repositorios. Encargado de src/models, src/repositories, src/database, migrations/. Usar para tareas de esquema, migraciones, consultas y persistencia.",
+      "description": "Especialista en SQLAlchemy, Alembic y repositorios.",
       "permission": {
         "edit": "ask",
         "bash": "ask"
@@ -51,7 +52,7 @@
     },
     "tester": {
       "mode": "subagent",
-      "description": "Especialista en testing con pytest, mocks (MagicMock, responses) y cobertura. Encargado de tests/ unitarios y de integracion. Usar para escribir, corregir o ejecutar tests.",
+      "description": "Especialista en pytest, mocks y cobertura.",
       "permission": {
         "edit": "ask",
         "bash": "ask"
@@ -59,7 +60,7 @@
     },
     "reviewer": {
       "mode": "subagent",
-      "description": "Revisor de codigo que verifica calidad, estilo (Ruff, type hints), cumplimiento de reglas del proyecto y documentacion. NO edita archivos. Usar antes de commit o PR para validar que todo cumple los estandares.",
+      "description": "Revisor de codigo. No modifica archivos.",
       "permission": {
         "edit": "deny",
         "bash": "ask"
@@ -68,22 +69,30 @@
   },
   "command": {
     "scrape": {
-      "description": "Ejecuta el scraper de Meta Ads Library con argumentos CLI. Ej: scrape --keyword curso:30 --headless --no-enrich"
+      "description": "Ejecuta el scraper de Meta Ads Library.",
+      "template": "El usuario ejecutó /scrape.\n\nSolicitud:\n{{args}}\n\nAnaliza el proyecto y utiliza las herramientas disponibles para implementar o ejecutar el scraper solicitado."
     },
     "test": {
-      "description": "Ejecuta los tests del proyecto con pytest."
+      "description": "Ejecuta los tests del proyecto.",
+      "template": "El usuario ejecutó /test.\n\nEjecuta la suite de tests del proyecto usando las herramientas disponibles. Corrige los errores encontrados hasta que todos los tests pasen."
     },
     "lint": {
-      "description": "Ejecuta ruff linting para verificar calidad de codigo."
+      "description": "Ejecuta Ruff.",
+      "template": "El usuario ejecutó /lint.\n\nEjecuta el lint del proyecto, corrige todos los problemas encontrados y vuelve a verificar."
     },
     "check": {
-      "description": "Ejecuta validacion completa: format + lint + tests. Obligatorio antes de cerrar cualquier tarea."
+      "description": "Ejecuta format + lint + tests.",
+      "template": "El usuario ejecutó /check.\n\nEjecuta la validación completa del proyecto (format, lint y tests). Corrige cualquier error hasta que el proyecto quede limpio."
     }
   },
   "mcp": {
     "playwright": {
       "type": "local",
-      "command": ["npx", "-y", "@playwright/mcp"],
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp"
+      ],
       "enabled": true,
       "env": {
         "BROWSER": "chromium"

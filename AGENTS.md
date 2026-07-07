@@ -52,9 +52,9 @@ src/
 |--------|-----|
 | `@primary` | Agente principal. Orquestacion general. |
 | `@scraper` | Playwright, anti-deteccion, extraction, DTOs. |
-| `@db` | Modelos SQLAlchemy, migraciones, repositorios. |
-| `@tester` | Tests con pytest, mocks, cobertura. |
-| `@reviewer` | Code review (solo lectura). |
+| `@db` | SQLAlchemy, Alembic y repositorios. |
+| `@tester` | pytest, mocks y cobertura. |
+| `@reviewer` | Code review. No modifica archivos. |
 
 Usa `@agent-name` para delegar tareas especificas.
 

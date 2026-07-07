@@ -1,7 +1,6 @@
 ---
 description: Agente principal del proyecto. Orquesta tareas, decide cuando delegar a subagentes y coordina el flujo completo de desarrollo.
 mode: primary
-model: ollama/qwen2.5-coder:7b
 permission:
   bash: allow
 ---
