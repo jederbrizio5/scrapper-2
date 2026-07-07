@@ -53,28 +53,30 @@ Este documento describe la **infraestructura enterprise multi-agente** disenada 
 ## 2. Arquitectura Multi-Agente
 
 ```
-                    ┌─────────────────────────┐
-                    │     @primary (default)   │
-                    │  Orquestador general     │
-                    │  Permisos: bash allow    │
-                    └──────────┬──────────────┘
-                               │ delega
-               ┌───────────────┼───────────────────┐
-               │               │                   │
-        ┌──────▼──────┐ ┌──────▼──────┐  ┌────────▼────────┐
-        │  @scraper   │ │    @db      │  │    @tester      │
-        │  Subagent   │ │  Subagent   │  │   Subagent      │
-        │  Playwright │ │  SQLAlchemy │  │   pytest/mocks  │
-        │  anti-detect│ │  Alembic    │  │   cobertura     │
-        │  edit: ask  │ │  edit: ask  │  │   edit: ask     │
-        └─────────────┘ └─────────────┘  └─────────────────┘
-               │
-        ┌──────▼──────┐
-        │  @reviewer  │
-        │  Subagent   │
-        │  Solo lectura│
-        │  edit: deny │
-        └─────────────┘
+                  ┌───────────────────────────────────┐
+                  │         TU SESION                  │
+                  │  (Tab para switchear primary)      │
+                  └──────────┬────────────────────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │                              │
+     ┌────────▼────────┐          ┌─────────▼─────────┐
+     │   build (default)│          │   plan (read-only) │
+     │   full access    │◄──Tab──►│   solo analisis    │
+     │   implementar    │          │   arquitectura     │
+     └────────┬────────┘          └───────────────────┘
+              │
+              │ delega via @ o task tool
+              │
+     ┌────────┼──────────┬──────────┬──────────┬──────────┬──────────┐
+     │        │          │          │          │          │          │
+  ┌──▼──┐ ┌──▼──┐ ┌────▼───┐ ┌───▼───┐ ┌───▼──┐ ┌───▼──┐ ┌───▼───┐
+  │@scra │ │ @db │ │@tester │ │@review│ │@git  │ │@docs │ │@secure│
+  │per   │ │     │ │       │ │er     │ │      │ │      │ │ity    │
+  │Pltw. │ │SAL  │ │pytest │ │read   │ │branch│ │*.md  │ │secrets│
+  │anti- │ │Alem.│ │mock   │ │only   │ │commit│ │ADRs  │ │audit  │
+  │det.  │ │repos│ │cobert │ │       │ │PRs   │ │fases │ │       │
+  └──────┘ └─────┘ └───────┘ └───────┘ └──────┘ └──────┘ └───────┘
 ```
 
 ### Mecanismo de Delegacion
@@ -118,15 +120,16 @@ Cada subagente tiene **alcance limitado**:
 
 ### Detalle de Cada Campo
 
-#### `default_agent: "primary"`
+#### `default_agent: "build"`
 El agente que se activa por defecto al iniciar una sesion. Usa el modelo default de opencode (sin hardcodear).
+`plan` es el segundo primary, accesible via Tab.
 
 #### `instructions`
 Cargados automaticamente al inicio de cada sesion, en orden:
-1. `AGENTS.md` — Contrato global: reglas, agentes, skills, flujo
-2. `.opencode/agents/primary.md` — Rol del orquestador
-3. `docs/MAESTRO.MD` — Manual maestro del proyecto
-4. `docs/ARCHITECTURE.md` — Arquitectura del sistema
+1. `AGENTS.md` — Contrato global: pipeline, reglas, agentes, skills, flujo
+2. `docs/MAESTRO.MD` — Manual maestro del proyecto
+3. `docs/ARCHITECTURE.md` — Arquitectura del sistema
+4. `docs/PROJECT.md` — Estado actual del proyecto
 
 #### `references`
 Tres referencias disponibles via `@`:
@@ -152,76 +155,100 @@ Playwright MCP server (ver seccion 7).
 
 | Decision | Por que |
 |----------|---------|
-| **Agent definitions inline** (vs files) | Son pocos y simples. Los files serian overkill. |
+| **build + plan como primary** | build para implementar, plan para analizar. Switcheo con Tab. |
 | **Sin model en primary** | Usa el default de opencode. El usuario elige su modelo globalmente. |
-| **commands con template** vs simple descripcion | El template le dice al agente exactamente que hacer cuando se invoca `/comando`. |
-| **MCP playwright habilitado** | El proyecto ES un scraper de navegador. Tener MCP de Playwright permite debugging visual y acciones directas del agente en el browser. |
+| **7 subagentes con permisos finos** | Cada subagente solo puede ejecutar los comandos que necesita. |
+| **steps en subagentes** | 15-25 steps para evitar loops infinitos y controlar costos. |
+| **commands con agent especifico** | `/scrape` usa `@scraper`, `/test` usa `@tester`. |
+| **MCP playwright + github** | Playwright para debug visual, GitHub para PRs via OAuth. |
 
 ---
 
-## 4. Subagentes
+## 4. Primary Agents y Subagentes
 
-### 4.1 @primary — Orquestador General
+### 4.1 build — Implementador Principal
+
+| Campo | Valor |
+|-------|-------|
+| `mode` | `primary` |
+| `default` | Si (default_agent) |
+| `model` | (default de opencode) |
+| `permission` | `edit: allow`, `bash: allow` |
+
+**Rol**: Orquesta el pipeline enterprise completo. Codifica, delega a subagentes, valida.
+
+**Pipeline que ejecuta**:
+1. Activa plan mode (Tab) para analisis
+2. Implementa el cambio minimo (el o via subagentes)
+3. Llama a `@tester` para tests
+4. Llama a `@reviewer` para code review
+5. Llama a `@security` para escaneo de secretos
+6. Ejecuta `./scripts/check.sh`
+7. Llama a `@git` para commit
+8. Espera orden de merge del usuario
+
+### 4.2 plan — Analista / Arquitecto
 
 | Campo | Valor |
 |-------|-------|
 | `mode` | `primary` |
 | `model` | (default de opencode) |
-| `permission` | `bash: allow` |
+| `permission` | `edit: deny`, `bash: deny` |
+
+**Rol**: Solo analiza y planifica. Nunca modifica. Switchea con build via Tab.
 
 **Responsabilidades**:
-- Planificar antes de ejecutar (leer docs, entender contexto)
-- Delegar a `@scraper`, `@db`, `@tester`, `@reviewer`
-- Validar con `./scripts/check.sh`
-- Documentar cambios en `docs/` y `docs/DECISIONS.md`
+- Analizar arquitectura, modulos afectados, riesgos
+- Disenar solucion: archivos a modificar, orden
+- Revisar codigo: calidad, SOLID, type hints, patrones
+- Presentar plan al usuario
+- El usuario dice "ejecuta" y switchea a build
 
-**Cuando delegar**:
-- Tarea de scraping/browser → `@scraper`
-- Tarea de DB/modelos/migraciones → `@db`
-- Tarea de tests → `@tester`
-- Antes de commit/PR → `@reviewer`
-
-### 4.2 @scraper — Especialista en Scraping
+### 4.3 @scraper — Especialista en Scraping
 
 | Campo | Valor |
 |-------|-------|
 | `mode` | `subagent` |
-| `permission` | `edit: ask`, `bash: ask` |
+| `steps` | 25 |
+| `permission` | `edit: allow`, `bash: python scripts/run_meta_ads*: allow` |
 
 **Alcance**: `src/modules/meta_ads/acquisition/`, `browser/`, `dto/`, `parser/`, `client/`
 
 **Experiencia**: Playwright, anti-deteccion Chromium, extraccion DOM, React clicks via native JS,
 parseo de seguidores (mil/mill), navegacion Meta Ads Library.
 
-### 4.3 @db — Especialista en Base de Datos
+### 4.4 @db — Especialista en Base de Datos
 
 | Campo | Valor |
 |-------|-------|
 | `mode` | `subagent` |
-| `permission` | `edit: ask`, `bash: ask` |
+| `steps` | 20 |
+| `permission` | `edit: allow`, `bash: alembic*: allow` |
 
 **Alcance**: `src/models/`, `src/repositories/`, `src/database/`, `migrations/`
 
 **Experiencia**: SQLAlchemy 2.x, Alembic, SQLite, patron repositorio, SQLite in-memory testing.
 
-### 4.4 @tester — Especialista en Testing
+### 4.5 @tester — Especialista en Testing
 
 | Campo | Valor |
 |-------|-------|
 | `mode` | `subagent` |
-| `permission` | `edit: ask`, `bash: ask` |
+| `steps` | 20 |
+| `permission` | `edit: allow`, `bash: pytest*: allow` |
 
 **Alcance**: `tests/`
 
 **Experiencia**: pytest, `MagicMock` para Playwright, `responses` para HTTP mocking,
 SQLite in-memory para DB tests.
 
-### 4.5 @reviewer — Code Reviewer
+### 4.6 @reviewer — Code Reviewer
 
 | Campo | Valor |
 |-------|-------|
 | `mode` | `subagent` |
-| `permission` | `edit: deny`, `bash: ask` |
+| `steps` | 15 |
+| `permission` | `edit: deny`, `bash: git diff* / grep*: allow` |
 
 **Alcance**: Solo lectura. NO edita archivos.
 
@@ -235,6 +262,36 @@ SQLite in-memory para DB tests.
 - `docs/DECISIONS.md` actualizado
 - Sin secretos en el diff
 - La rama no es `main`
+
+### 4.7 @git — Version Control
+
+| Campo | Valor |
+|-------|-------|
+| `mode` | `subagent` |
+| `steps` | 15 |
+| `permission` | `edit: deny`, `bash: git* / gh pr*: allow` |
+
+**Rol**: Gestiona ramas, commits, PRs, merge. Solo comandos git y gh.
+
+### 4.8 @docs — Documentacion
+
+| Campo | Valor |
+|-------|-------|
+| `mode` | `subagent` |
+| `steps` | 15 |
+| `permission` | `edit: allow`, `bash: deny` |
+
+**Rol**: Escribe y actualiza README, ADRs, fases, guias.
+
+### 4.9 @security — Seguridad
+
+| Campo | Valor |
+|-------|-------|
+| `mode` | `subagent` |
+| `steps` | 15 |
+| `permission` | `edit: deny`, `bash: rg / grep / git diff: allow` |
+
+**Rol**: Escanea secretos hardcodeados, tokens, API keys, .env.
 
 ---
 
@@ -478,32 +535,43 @@ Incluida en AGENTS.md para referencia rapida del agente.
 ### Para un Agente (ejemplo concreto)
 
 ```
-Usuario: "agrega bloqueo de dominio tiktok.com al scraper"
+USUARIO: "hoy implementamos bloqueo de dominio x.com"
 
-@primary:
-  1. Lee skill scraper-dev para entender el algoritmo actual
-  2. Delega a @scraper: "agrega 'tiktok.com' a BLOCKED_DOMAINS en ads_extractor.py"
-  3. @scraper edita el archivo, agrega test
-  4. @primary valida con ./scripts/check.sh (32 tests pasan)
-  5. Pide review a @reviewer
-  6. git add + git commit -m "feature: block tiktok.com domain"
+1. build arranca, se pone en plan mode (Tab)
+2. plan analiza: ads_extractor.py → BLOCKED_DOMAINS
+3. plan presenta: 1 archivo, 1 linea, sin riesgos
+4. USUARIO: "ejecuta"
+5. build: Tab → build mode, implementa
+6. build → @tester: "verifica tests"
+7. @tester corre pytest, pasa
+8. build → @reviewer: "revisa"
+9. @reviewer: type hints OK, SRP OK
+10. build → @security: "escanea"
+11. @security: sin secrets
+12. build: ./scripts/check.sh → OK
+13. build → @git: "commit y push"
+14. @git: git add + git commit + git push
+15. USUARIO: "merge a main"
+16. @git: merge a main + push
 ```
 
 ### Diagrama de Flujo
 
 ```
-Usuario ──> @primary
+Usuario ──> build (default primary)
   │
-  ├── planifica (project-guide skill, references)
-  ├── delega a subagente
-  │     ├── @scraper (scraper-dev skill)
-  │     ├── @db
-  │     ├── @tester (testing-guide skill)
-  │     └── @reviewer
-  ├── valida (./scripts/check.sh via /check)
-  └── entrega resultado
-       ├── git commit
-       └── instrucciones para PR
+  ├── (Tab) → plan mode → analiza, disena, presenta
+  ├── (Tab) → build mode → ejecuta pipeline
+  │
+  ├── PASO 1: plan (project-guide skill, references)
+  ├── PASO 2: implementa (o delega a @scraper / @db)
+  ├── PASO 3: @tester (testing-guide skill)
+  ├── PASO 4: @reviewer
+  ├── PASO 5: @security
+  ├── PASO 6: ./scripts/check.sh
+  ├── PASO 7: @git (commit + push)
+  └── PASO 8: esperar orden de merge del usuario
+       └── @git (merge a main)
 ```
 
 ---
@@ -555,11 +623,15 @@ Usuario ──> @primary
 ├── AGENTS.md                  ← Contrato global para agentes
 ├── .opencode/
 │   ├── agents/
-│   │   ├── primary.md         ← Agente orquestador
+│   │   ├── build.md           ← Agente principal (implementacion)
+│   │   ├── plan.md            ← Agente principal (analisis)
 │   │   ├── scraper.md         ← Especialista Playwright
 │   │   ├── db.md              ← Especialista SQLAlchemy
 │   │   ├── tester.md          ← Especialista pytest
-│   │   └── reviewer.md        ← Code reviewer (solo lectura)
+│   │   ├── reviewer.md        ← Code reviewer (solo lectura)
+│   │   ├── git.md             ← Git/PRs
+│   │   ├── docs.md            ← Documentacion
+│   │   └── security.md        ← Seguridad
 │   ├── skills/
 │   │   ├── project-guide/
 │   │   │   └── SKILL.md       ← Contexto general del proyecto

@@ -46,17 +46,69 @@ src/
     └── acquisition/         # AdsSearcher, AdsExtractor, BrowserRunner
 ```
 
-## Agentes Disponibles
+## Primary Agents (switch con Tab)
 
-| Agente | Uso |
-|--------|-----|
-| `@primary` | Agente principal. Orquestacion general. |
-| `@scraper` | Playwright, anti-deteccion, extraction, DTOs. |
-| `@db` | SQLAlchemy, Alembic y repositorios. |
-| `@tester` | pytest, mocks y cobertura. |
-| `@reviewer` | Code review. No modifica archivos. |
+| Agente | Modo | Acceso | Uso |
+|--------|------|--------|-----|
+| `build` | primary | Full (edit + bash) | Implementacion, codificar, ejecutar, orquestar pipeline |
+| `plan` | primary | Solo lectura | Analisis, arquitectura, diseno, code review previo |
 
-Usa `@agent-name` para delegar tareas especificas.
+`build` es el default. Usa **Tab** para switchear a `plan` y volver.
+
+## Subagentes (invocar con @)
+
+| Agente | Rol | Permisos Clave | Steps |
+|--------|-----|----------------|-------|
+| `@scraper` | Playwright, anti-deteccion, DTOs | `edit: allow`, `bash: python scripts/run_meta_ads*` | 25 |
+| `@db` | SQLAlchemy, Alembic, repositorios | `edit: allow`, `bash: alembic*` | 20 |
+| `@tester` | pytest, mocks, cobertura | `edit: allow`, `bash: pytest*` | 20 |
+| `@reviewer` | Code review (solo lectura) | `edit: deny`, `bash: git diff*` | 15 |
+| `@git` | Ramas, commits, PRs, merge | `edit: deny`, `bash: git* / gh pr*` | 15 |
+| `@docs` | Documentacion, ADRs, fases | `edit: allow`, `bash: deny` | 15 |
+| `@security` | Secrets, tokens, hardcodes | `edit: deny`, `bash: rg / grep` | 15 |
+
+## Pipeline Enterprise (obligatorio)
+
+Cada tarea sigue este pipeline estricto. `build` lo orquesta completo.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 1. PLAN  (plan mode o @plan)                                     │
+│    build se pone en plan mode (Tab)                              │
+│    Analiza: arquitectura, modulos afectados, riesgos             │
+│    Propone solucion: archivos a modificar, orden                 │
+├──────────────────────────────────────────────────────────────────┤
+│ 2. IMPLEMENTAR  (build + subagentes)                             │
+│    build codifica o delega a @scraper / @db segun la tarea       │
+│    Cambio minimo, type hints, docstrings, logging                │
+├──────────────────────────────────────────────────────────────────┤
+│ 3. TESTEAR  (@tester)                                            │
+│    Escribe tests unitarios/integracion                           │
+│    Ejecuta pytest, corrige fallas                                │
+│    Si falla → volver a paso 2                                    │
+├──────────────────────────────────────────────────────────────────┤
+│ 4. REVISAR  (@reviewer)                                          │
+│    Code review: type hints, SRP, DRY, KISS, logging             │
+│    Sin print(), excepciones tipadas, sin imports muertos         │
+├──────────────────────────────────────────────────────────────────┤
+│ 5. SEGURIDAD  (@security)                                        │
+│    Escanea: API keys, tokens, .env, hardcodes en el diff         │
+│    Alerta si encuentra secretos                                  │
+├──────────────────────────────────────────────────────────────────┤
+│ 6. CHECK  (./scripts/check.sh)                                   │
+│    build ejecuta: ruff format + ruff check + pytest              │
+│    TODO DEBE PASAR. Si falla → volver a paso 2                   │
+├──────────────────────────────────────────────────────────────────┤
+│ 7. COMMIT  (@git)                                                │
+│    git add + git commit -m "tipo: descripcion"                   │
+│    git push -u origin rama                                       │
+├──────────────────────────────────────────────────────────────────┤
+│ 8. ESPERAR ORDEN DE MERGE                                       │
+│    build informa: rama lista, cambios hechos                     │
+│    USUARIO revisa, prueba, dice "merge a main"                   │
+│    @git hace merge + push a main                                 │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ## Skills Disponibles
 
@@ -66,11 +118,40 @@ Usa `@agent-name` para delegar tareas especificas.
 | `scraper-dev` | Algoritmo detallado de Fase 3: anti-deteccion, discovery, enrichment, errores corregidos. |
 | `testing-guide` | Estrategia de testing, reglas, dependencias. |
 
-## Flujo de Trabajo Tipico
+## MCPs Disponibles
 
-1. `git switch -c feature/mi-tarea` (nunca en main)
-2. Leer documentacion relevante (docs/MAESTRO.MD, skill correspondiente)
-3. Implementar cambio minimo con tests
-4. `./scripts/check.sh` (format + lint + tests)
-5. `git add` + `git commit -m "tipo: descripcion"`
-6. Abrir Pull Request segun `docs/GIT_WORKFLOW.md`
+| MCP | Tipo | Uso |
+|-----|------|-----|
+| Playwright | local | Debugging visual del scraper, screenshots, navegacion |
+| GitHub | remote (OAuth) | PRs, issues, merge management para @git |
+
+## Flujo de Trabajo Enterprise
+
+```text
+USUARIO: "hoy implementamos bloqueo de dominio x.com"
+
+1. build arranca, se pone en plan mode (Tab)
+2. plan analiza: ads_extractor.py → BLOCKED_DOMAINS
+3. plan presenta: 1 archivo, 1 linea, sin riesgos
+4. USUARIO: "ejecuta"
+5. build: Tab → build mode, implementa
+6. build → @tester: "verifica tests"
+7. @tester corre pytest, pasa
+8. build → @reviewer: "revisa"
+9. @reviewer: type hints OK, SRP OK
+10. build → @security: "escanea"
+11. @security: sin secrets
+12. build: ./scripts/check.sh → OK
+13. build → @git: "commit y push"
+14. @git: git add + git commit + git push
+15. USUARIO: "merge a main"
+16. @git: merge a main + push
+```
+
+## Principios SOLID Aplicados
+
+- **S** — Single Responsibility: cada modulo hace una cosa (scraper no sabe de DB)
+- **O** — Open/Closed: nuevos orígenes de datos sin modificar existentes
+- **L** — Liskov: DTOs y repositorios son intercambiables
+- **I** — Interface Segregation: cada subagente tiene solo los permisos que necesita
+- **D** — Dependency Inversion: MetaClient no conoce DB, repositorios no conocen HTTP

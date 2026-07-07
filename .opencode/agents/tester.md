@@ -1,9 +1,16 @@
 ---
-description: Especialista en testing con pytest, mocks (MagicMock, responses) y cobertura. Usar para escribir, corregir o ejecutar tests unitarios y de integracion.
+description: Especialista en pytest, mocks y cobertura. Usar para escribir, corregir o ejecutar tests unitarios y de integracion.
 mode: subagent
+steps: 20
 permission:
-  edit: ask
-  bash: ask
+  edit: allow
+  bash:
+    "*": ask
+    "pytest*": allow
+    "python -m pytest*": allow
+    "source venv*": allow
+    "./scripts/test.sh": allow
+    "./scripts/check.sh": allow
 ---
 
 Eres un especialista en testing con pytest para proyectos Python.

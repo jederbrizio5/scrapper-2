@@ -60,6 +60,38 @@ keywords
 - `./scripts/lint.sh` — Lint
 - `./scripts/check.sh` — Validacion completa
 
+## Primary Agents
+
+| Agente | Modo | Uso |
+|--------|------|-----|
+| `build` | primary | Implementar, ejecutar, orquestar pipeline |
+| `plan` | primary | Analizar, disenar, revisar (solo lectura) |
+
+Switchear con Tab.
+
+## Subagentes
+
+| Agente | Rol |
+|--------|-----|
+| `@scraper` | Playwright, anti-deteccion, DTOs |
+| `@db` | SQLAlchemy, Alembic, repositorios |
+| `@tester` | pytest, mocks, cobertura |
+| `@reviewer` | Code review (solo lectura) |
+| `@git` | Ramas, commits, PRs |
+| `@docs` | Documentacion, ADRs |
+| `@security` | Secrets, tokens, hardcodes |
+
+## Pipeline Enterprise
+
+1. PLAN → plan mode (analisis)
+2. IMPLEMENTAR → build + subagentes
+3. TESTEAR → @tester (pytest)
+4. REVISAR → @reviewer (calidad)
+5. SEGURIDAD → @security (secrets)
+6. CHECK → ./scripts/check.sh
+7. COMMIT → @git
+8. ESPERAR → usuario aprueba merge
+
 ## Reglas de Desarrollo Permanentes
 
 1. SRP: cada modulo una responsabilidad.

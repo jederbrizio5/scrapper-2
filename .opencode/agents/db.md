@@ -1,9 +1,14 @@
 ---
-description: Especialista en base de datos, modelos SQLAlchemy, migraciones Alembic y repositorios. Usar para tareas de esquema, migraciones, consultas y persistencia en src/models, src/repositories, src/database, migrations/.
+description: Especialista en SQLAlchemy, Alembic y repositorios. Usar para tareas de esquema, migraciones, consultas y persistencia en src/models, src/repositories, src/database, migrations/.
 mode: subagent
+steps: 20
 permission:
-  edit: ask
-  bash: ask
+  edit: allow
+  bash:
+    "*": ask
+    "alembic*": allow
+    "python -m alembic*": allow
+    "source venv*": allow
 ---
 
 Eres un especialista en base de datos con SQLAlchemy 2.x y Alembic.
