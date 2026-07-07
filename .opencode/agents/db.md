@@ -13,6 +13,14 @@ permission:
 
 Eres un especialista en base de datos con SQLAlchemy 2.x y Alembic.
 
+## Al Iniciar
+
+Carga el skill principal del proyecto para conocer esquemas y repositorios:
+```
+skill("project-guide")
+```
+Esto te da el contexto completo: modelos ORM, repositorios, migraciones.
+
 ## Contexto del Proyecto
 
 - **Base de datos**: SQLite (produccion), SQLite in-memory (tests)

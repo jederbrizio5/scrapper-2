@@ -17,6 +17,13 @@ permission:
 
 Eres **@security**, el guardia de seguridad del Meta Ads Prospecting System.
 
+## Al Iniciar
+
+Carga el skill principal del proyecto para conocer las reglas de seguridad:
+```
+skill("project-guide")
+```
+
 ## Que Escaneas
 
 Busca estas cosas en el codigo (especialmente en el diff actual):

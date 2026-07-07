@@ -57,57 +57,79 @@ src/
 
 ## Subagentes (invocar con @)
 
-| Agente | Rol | Permisos Clave | Steps |
-|--------|-----|----------------|-------|
-| `@scraper` | Playwright, anti-deteccion, DTOs | `edit: allow`, `bash: python scripts/run_meta_ads*` | 25 |
-| `@db` | SQLAlchemy, Alembic, repositorios | `edit: allow`, `bash: alembic*` | 20 |
-| `@tester` | pytest, mocks, cobertura | `edit: allow`, `bash: pytest*` | 20 |
-| `@reviewer` | Code review (solo lectura) | `edit: deny`, `bash: git diff*` | 15 |
-| `@git` | Ramas, commits, PRs, merge | `edit: deny`, `bash: git* / gh pr*` | 15 |
-| `@docs` | Documentacion, ADRs, fases | `edit: allow`, `bash: deny` | 15 |
-| `@security` | Secrets, tokens, hardcodes | `edit: deny`, `bash: rg / grep` | 15 |
+| Agente | Rol | Skills que Carga | Permisos Clave | Steps |
+|--------|-----|-----------------|----------------|-------|
+| `@scraper` | Playwright, anti-deteccion, DTOs | `scraper-dev` | `edit: allow`, `bash: python scripts/run_meta_ads*` | 25 |
+| `@db` | SQLAlchemy, Alembic, repositorios | `project-guide` | `edit: allow`, `bash: alembic*` | 20 |
+| `@tester` | pytest, mocks, cobertura | `testing-guide` | `edit: allow`, `bash: pytest*` | 20 |
+| `@reviewer` | Code review (solo lectura) | `project-guide` | `edit: deny`, `bash: git diff*, grep*, rg*` | 15 |
+| `@git` | Ramas, commits, PRs, merge | _(ninguno)_ | `edit: deny`, `bash: git* / gh pr*` | 15 |
+| `@docs` | Documentacion, ADRs, fases | `project-guide` | `edit: allow`, `bash: deny; git diff*` | 15 |
+| `@security` | Secrets, tokens, hardcodes | `project-guide` | `edit: deny`, `bash: rg / grep / git diff*` | 15 |
 
 ## Pipeline Enterprise (obligatorio)
 
-Cada tarea sigue este pipeline estricto. `build` lo orquesta completo.
+Cada tarea sigue este pipeline estricto. `build` lo orquesta completo. No saltees pasos.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ 1. PLAN  (plan mode o @plan)                                     │
-│    build se pone en plan mode (Tab)                              │
-│    Analiza: arquitectura, modulos afectados, riesgos             │
-│    Propone solucion: archivos a modificar, orden                 │
-├──────────────────────────────────────────────────────────────────┤
-│ 2. IMPLEMENTAR  (build + subagentes)                             │
-│    build codifica o delega a @scraper / @db segun la tarea       │
-│    Cambio minimo, type hints, docstrings, logging                │
-├──────────────────────────────────────────────────────────────────┤
-│ 3. TESTEAR  (@tester)                                            │
-│    Escribe tests unitarios/integracion                           │
-│    Ejecuta pytest, corrige fallas                                │
-│    Si falla → volver a paso 2                                    │
-├──────────────────────────────────────────────────────────────────┤
-│ 4. REVISAR  (@reviewer)                                          │
-│    Code review: type hints, SRP, DRY, KISS, logging             │
-│    Sin print(), excepciones tipadas, sin imports muertos         │
-├──────────────────────────────────────────────────────────────────┤
-│ 5. SEGURIDAD  (@security)                                        │
-│    Escanea: API keys, tokens, .env, hardcodes en el diff         │
-│    Alerta si encuentra secretos                                  │
-├──────────────────────────────────────────────────────────────────┤
-│ 6. CHECK  (./scripts/check.sh)                                   │
-│    build ejecuta: ruff format + ruff check + pytest              │
-│    TODO DEBE PASAR. Si falla → volver a paso 2                   │
-├──────────────────────────────────────────────────────────────────┤
-│ 7. COMMIT  (@git)                                                │
-│    git add + git commit -m "tipo: descripcion"                   │
-│    git push -u origin rama                                       │
-├──────────────────────────────────────────────────────────────────┤
-│ 8. ESPERAR ORDEN DE MERGE                                       │
-│    build informa: rama lista, cambios hechos                     │
-│    USUARIO revisa, prueba, dice "merge a main"                   │
-│    @git hace merge + push a main                                 │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 1. PLAN  (plan mode o @plan)                                                 │
+│    build se pone en plan mode (Tab) o consulta a @plan                       │
+│    Analiza: arquitectura, modulos afectados, riesgos                         │
+│    Propone solucion: archivos a modificar, orden                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 2. IMPLEMENTAR  (build + subagentes)                                         │
+│    build carga skill("project-guide") y codifica                             │
+│    Delega a @scraper (carga scraper-dev) o @db segun la tarea                │
+│    Cambio minimo, type hints, docstrings, logging                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 3. TESTEAR  (@tester)                                                        │
+│    @tester carga skill("testing-guide")                                      │
+│    Escribe tests unitarios/integracion                                       │
+│    Ejecuta pytest, corrige fallas                                            │
+│    Si falla → volver a paso 2                                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 4. REVISAR  (@reviewer)                                                      │
+│    @reviewer carga skill("project-guide")                                    │
+│    Code review: type hints, SRP, DRY, KISS, logging, docstrings             │
+│    Sin print(), excepciones tipadas, sin imports muertos                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 5. SEGURIDAD  (@security)                                                    │
+│    @security carga skill("project-guide")                                    │
+│    Escanea: API keys, tokens, .env, hardcodes en el diff                     │
+│    Alerta si encuentra secretos                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 6. DOCUMENTAR  (@docs)                                                       │
+│    @docs carga skill("project-guide")                                        │
+│    Lee git diff para entender los cambios                                    │
+│    Actualiza ADRs en docs/DECISIONS.md si corresponde                        │
+│    Actualiza docs/phases/ si cambio de fase                                  │
+│    Actualiza README.md si cambio instalacion/uso                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 7. CHECK  (./scripts/check.sh)                                               │
+│    build ejecuta: ruff format + ruff check + pytest                          │
+│    TODO DEBE PASAR. Si falla → volver a paso 2                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 8. COMMIT  (@git)                                                            │
+│    git add + git commit -m "tipo: descripcion"                               │
+│    git push -u origin rama                                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 9. INFORMAR  (build)                                                         │
+│    build compila informe final con:                                          │
+│    - Que problema se resolvio                                                │
+│    - Como se soluciono (archivos, modulos)                                   │
+│    - Tests: resultado                                                        │
+│    - Review: resultado                                                       │
+│    - Seguridad: resultado                                                    │
+│    - Documentacion: que se actualizo                                         │
+│    - Rama: nombre y estado                                                   │
+│    build entrega el informe al usuario                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 10. ESPERAR ORDEN DE MERGE                                                  │
+│     build informa: rama lista, cambios hechos                                │
+│     USUARIO revisa, prueba, dice "merge a main"                              │
+│     @git hace merge + push a main                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Skills Disponibles
@@ -141,11 +163,14 @@ USUARIO: "hoy implementamos bloqueo de dominio x.com"
 9. @reviewer: type hints OK, SRP OK
 10. build → @security: "escanea"
 11. @security: sin secrets
-12. build: ./scripts/check.sh → OK
-13. build → @git: "commit y push"
-14. @git: git add + git commit + git push
-15. USUARIO: "merge a main"
-16. @git: merge a main + push
+12. build → @docs: "documenta el cambio"
+13. @docs: ADR agregado a docs/DECISIONS.md
+14. build: ./scripts/check.sh → OK
+15. build → @git: "commit y push"
+16. @git: git add + git commit + git push
+17. build: compila informe final y lo entrega
+18. USUARIO: "merge a main"
+19. @git: merge a main + push
 ```
 
 ## Principios SOLID Aplicados
