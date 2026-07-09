@@ -105,6 +105,7 @@ Cada tarea sigue este pipeline estricto. `build` lo orquesta completo. No saltee
 │    Actualiza ADRs en docs/DECISIONS.md si corresponde                        │
 │    Actualiza docs/phases/ si cambio de fase                                  │
 │    Actualiza README.md si cambio instalacion/uso                             │
+│    **Verifica skills en .opencode/skills/ si cambió arquitectura**          │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ 7. CHECK  (./scripts/check.sh)                                               │
 │    build ejecuta: ruff format + ruff check + pytest                          │
@@ -165,12 +166,13 @@ USUARIO: "hoy implementamos bloqueo de dominio x.com"
 11. @security: sin secrets
 12. build → @docs: "documenta el cambio"
 13. @docs: ADR agregado a docs/DECISIONS.md
-14. build: ./scripts/check.sh → OK
-15. build → @git: "commit y push"
-16. @git: git add + git commit + git push
-17. build: compila informe final y lo entrega
-18. USUARIO: "merge a main"
-19. @git: merge a main + push
+14. @docs: verifica skills — project-guide actualizado a 10 pasos
+15. build: ./scripts/check.sh → OK
+16. build → @git: "commit y push"
+17. @git: git add + git commit + git push
+18. build: compila informe final y lo entrega
+19. USUARIO: "merge a main"
+20. @git: merge a main + push
 ```
 
 ## Principios SOLID Aplicados

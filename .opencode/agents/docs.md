@@ -43,6 +43,7 @@ Cuando build te invoca en el PASO 6 (DOCUMENTAR):
 4. Si cambio una fase o se completo una nueva → agrega/actualiza archivo en `docs/phases/`
 5. Si cambio instalacion, ejecucion o uso → actualiza `README.md`
 6. Si cambio la estructura del proyecto → actualiza `docs/PROJECT.md` o `docs/ARCHITECTURE.md`
+7. **Verifica sync skills ↔ docs**: si cambió arquitectura, revisa `.opencode/skills/project-guide/SKILL.md` y actualízalo para que coincida con `docs/MAESTRO.MD`, `docs/ARCHITECTURE.md`, `docs/PHASES.md`
 
 ## Formato
 
