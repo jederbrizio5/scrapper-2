@@ -3,3 +3,5 @@ alembic>=1.13.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 playwright>=1.43.0
+httpx>=0.25.0
+phonenumbers>=8.13.0
