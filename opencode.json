@@ -2,7 +2,6 @@
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "build",
   "instructions": [
-    "AGENTS.md",
     "docs/MAESTRO.MD",
     "docs/ARCHITECTURE.md",
     "docs/PROJECT.md"
@@ -15,169 +14,6 @@
     "phases": {
       "path": "docs/phases",
       "description": "Documentacion detallada de cada fase completada y su implementacion."
-    },
-    "scripts": {
-      "path": "scripts",
-      "description": "Scripts de instalacion, ejecucion, tests, lint, formato y validacion."
-    }
-  },
-  "skills": {
-    "paths": [".opencode/skills"]
-  },
-  "agent": {
-    "build": {
-      "mode": "primary",
-      "description": "Agente principal de implementacion. Acceso completo para codificar, ejecutar tests, orquestar pipeline. Delega a subagentes segun la tarea.",
-      "permission": {
-        "edit": "allow",
-        "bash": "allow"
-      }
-    },
-    "plan": {
-      "mode": "primary",
-      "description": "Agente de planificacion y analisis. Solo lectura. Analiza arquitectura, disena soluciones, revisa codigo. No modifica archivos ni ejecuta comandos.",
-      "permission": {
-        "edit": "deny",
-        "bash": "deny"
-      }
-    },
-    "scraper": {
-      "mode": "subagent",
-      "steps": 25,
-      "description": "Especialista en scraping con Playwright y anti-deteccion para Meta Ads Library. Playwright, browser, parser, DTOs.",
-      "permission": {
-        "edit": "allow",
-        "bash": {
-          "*": "ask",
-          "python scripts/run_meta_ads*": "allow",
-          "source venv*": "allow",
-          "playwright*": "allow",
-          "npx playwright*": "allow",
-          "npx @playwright*": "allow"
-        }
-      }
-    },
-    "db": {
-      "mode": "subagent",
-      "steps": 20,
-      "description": "Especialista en SQLAlchemy, Alembic y repositorios. Esquemas, migraciones, modelos, consultas.",
-      "permission": {
-        "edit": "allow",
-        "bash": {
-          "*": "ask",
-          "alembic*": "allow",
-          "python -m alembic*": "allow",
-          "source venv*": "allow"
-        }
-      }
-    },
-    "tester": {
-      "mode": "subagent",
-      "steps": 20,
-      "description": "Especialista en pytest, mocks y cobertura. Escribe, corrige y ejecuta tests unitarios y de integracion.",
-      "permission": {
-        "edit": "allow",
-        "bash": {
-          "*": "ask",
-          "pytest*": "allow",
-          "python -m pytest*": "allow",
-          "source venv*": "allow",
-          "./scripts/test.sh": "allow",
-          "./scripts/check.sh": "allow"
-        }
-      }
-    },
-    "reviewer": {
-      "mode": "subagent",
-      "steps": 15,
-      "description": "Revisor de codigo. Verifica calidad, type hints, reglas del proyecto. No modifica archivos.",
-      "permission": {
-        "edit": "deny",
-        "bash": {
-          "*": "deny",
-          "git diff*": "allow",
-          "git log*": "allow",
-          "git show*": "allow",
-          "grep *": "allow",
-          "rg *": "allow",
-          "source venv*": "allow",
-          "./scripts/check.sh": "allow"
-        }
-      }
-    },
-    "git": {
-      "mode": "subagent",
-      "steps": 15,
-      "description": "Gestiona ramas, commits, PRs y merge. Solo comandos git y gh. No edita archivos de codigo.",
-      "permission": {
-        "edit": "deny",
-        "bash": {
-          "*": "ask",
-          "git status*": "allow",
-          "git diff*": "allow",
-          "git log*": "allow",
-          "git show*": "allow",
-          "git add*": "allow",
-          "git commit*": "allow",
-          "git push*": "allow",
-          "git switch*": "allow",
-          "git branch*": "allow",
-          "git checkout*": "allow",
-          "git merge*": "allow",
-          "git pull*": "allow",
-          "git revert*": "allow",
-          "git stash*": "allow",
-          "gh pr*": "allow",
-          "gh issue*": "allow",
-          "gh auth*": "allow"
-        }
-      }
-    },
-    "docs": {
-      "mode": "subagent",
-      "steps": 15,
-      "description": "Escribe y actualiza documentacion: README, ADRs, fases, guias. No ejecuta comandos.",
-      "permission": {
-        "edit": "allow",
-        "bash": "deny"
-      }
-    },
-    "security": {
-      "mode": "subagent",
-      "steps": 15,
-      "description": "Escanea secretos hardcodeados, tokens, API keys, .env, URLs privadas en el codigo. Solo lectura.",
-      "permission": {
-        "edit": "deny",
-        "bash": {
-          "*": "deny",
-          "rg *": "allow",
-          "grep -r*": "allow",
-          "grep -rn*": "allow",
-          "git diff*": "allow",
-          "git log -p*": "allow",
-          "source venv*": "allow"
-        }
-      }
-    }
-  },
-  "command": {
-    "scrape": {
-      "description": "Ejecuta el scraper de Meta Ads Library.",
-      "agent": "scraper",
-      "template": "source venv/bin/activate && python scripts/run_meta_ads_browser.py $ARGUMENTS"
-    },
-    "test": {
-      "description": "Ejecuta los tests del proyecto.",
-      "agent": "tester",
-      "template": "source venv/bin/activate && ./scripts/test.sh"
-    },
-    "lint": {
-      "description": "Ejecuta Ruff.",
-      "template": "source venv/bin/activate && ./scripts/lint.sh"
-    },
-    "check": {
-      "description": "Ejecuta format + lint + tests.",
-      "template": "source venv/bin/activate && ./scripts/check.sh"
     }
   },
   "mcp": {
@@ -186,11 +22,6 @@
       "command": ["npx", "-y", "@playwright/mcp"],
       "enabled": true,
       "env": { "BROWSER": "chromium" }
-    },
-    "github": {
-      "type": "remote",
-      "url": "https://api.github.com/mcp",
-      "enabled": true
     }
   }
 }

@@ -127,6 +127,7 @@ def main() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(handler)
+    logger = logging.getLogger(__name__)
 
     args = parse_args()
 
@@ -209,6 +210,7 @@ def main() -> None:
                 session_per_ads=args.session_per_ads,
                 proxy_list=proxy_list if proxy_list else None,
                 split_by_keyword=not args.no_split,
+                browser=browser,  # Pass the browser instance
             )
             runner.sort_mode = args.sort_mode
 

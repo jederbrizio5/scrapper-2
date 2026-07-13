@@ -1,6 +1,6 @@
-import asyncio
 import hashlib
 import logging
+import time
 from typing import Optional
 
 import httpx
@@ -64,11 +64,11 @@ class LandingScraper:
         self.playwright_browser = playwright_browser
         self.save_html = save_html
 
-        self._httpx_client: Optional[httpx.AsyncClient] = None
+        self._httpx_client: Optional[httpx.Client] = None
         self._last_request_time = 0.0
 
-    async def __aenter__(self):
-        self._httpx_client = httpx.AsyncClient(
+    def __enter__(self):
+        self._httpx_client = httpx.Client(
             timeout=httpx.Timeout(self.timeout_httpx),
             follow_redirects=self.follow_redirects,
             verify=self.verify_ssl,
@@ -76,9 +76,9 @@ class LandingScraper:
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         if self._httpx_client:
-            await self._httpx_client.aclose()
+            self._httpx_client.close()
         self._httpx_client = None
 
     def _normalize_url(self, url: str) -> str:
@@ -87,31 +87,31 @@ class LandingScraper:
             url = "https://" + url
         return url
 
-    async def _rate_limit(self):
+    def _rate_limit(self):
         """Rate limiting simple entre requests."""
-        now = asyncio.get_event_loop().time()
+        now = time.time()
         elapsed = now - self._last_request_time
         if elapsed < self.delay_between_requests:
-            await asyncio.sleep(self.delay_between_requests - elapsed)
-        self._last_request_time = asyncio.get_event_loop().time()
+            time.sleep(self.delay_between_requests - elapsed)
+        self._last_request_time = time.time()
 
-    async def scrape(self, url: str) -> LandingExtractionResult:
+    def scrape(self, url: str) -> LandingExtractionResult:
         """Scrapea una landing page con fallback automático."""
         url = self._normalize_url(url)
-        await self._rate_limit()
+        self._rate_limit()
 
         result = LandingExtractionResult(url=url)
 
         # Intentar httpx primero
         try:
-            result = await self._scrape_httpx(url)
+            result = self._scrape_httpx(url)
             if result.status == "completed":
                 # Verificar si parece SPA y necesita Playwright
                 if self.playwright_browser and detect_spa(result.raw_html or ""):
                     logger.info(
                         f"SPA detectada en {url}, intentando Playwright fallback"
                     )
-                    pw_result = await self._scrape_playwright(url)
+                    pw_result = self._scrape_playwright(url)
                     if pw_result.status == "completed":
                         # Merge: mantener emails/phones de httpx si PW no los tiene
                         pw_result.emails = pw_result.emails or result.emails
@@ -125,7 +125,7 @@ class LandingScraper:
         # Fallback a Playwright si disponible
         if self.playwright_browser:
             try:
-                result = await self._scrape_playwright(url)
+                result = self._scrape_playwright(url)
                 result.method = "playwright"
                 return result
             except Exception as e:
@@ -138,14 +138,14 @@ class LandingScraper:
         result.error = "all_methods_failed"
         return result
 
-    async def _scrape_httpx(self, url: str) -> LandingExtractionResult:
+    def _scrape_httpx(self, url: str) -> LandingExtractionResult:
         """Scrapea usando httpx (rápido, sin JS)."""
         result = LandingExtractionResult(url=url, method="httpx")
         last_error = None
 
         for attempt in range(self.max_retries + 1):
             try:
-                resp = await self._httpx_client.get(url)
+                resp = self._httpx_client.get(url)
                 resp.raise_for_status()
 
                 html = resp.text
@@ -185,24 +185,17 @@ class LandingScraper:
                 logger.error(f"Error inesperado httpx {url}: {e}")
 
             if attempt < self.max_retries:
-                await asyncio.sleep(2**attempt)  # Backoff exponencial
+                time.sleep(2**attempt)  # Backoff exponencial
 
         result.status = "failed"
         result.error = last_error or "unknown_httpx_error"
         return result
 
-    async def _scrape_playwright(self, url: str) -> LandingExtractionResult:
+    def _scrape_playwright(self, url: str) -> LandingExtractionResult:
         """Scrapea usando Playwright (para SPAs y sitios con JS)."""
-
         result = LandingExtractionResult(url=url, method="playwright")
 
-        # Ejecutar en thread pool porque Playwright es sync
-        loop = asyncio.get_event_loop()
-        html = await loop.run_in_executor(
-            None,
-            self._playwright_fetch_sync,
-            url,
-        )
+        html = self._playwright_fetch_sync(url)
 
         if html:
             if self.save_html:
@@ -218,7 +211,7 @@ class LandingScraper:
         return result
 
     def _playwright_fetch_sync(self, url: str) -> Optional[str]:
-        """Fetch síncrono con Playwright (para run_in_executor)."""
+        """Fetch síncrono con Playwright (para thread pool)."""
         if not self.playwright_browser:
             return None
 
@@ -272,16 +265,16 @@ class LandingScraper:
         result.has_checkout_form = "checkout" in forms
 
 
-async def scrape_single(url: str, **kwargs) -> LandingExtractionResult:
+def scrape_single(url: str, **kwargs) -> LandingExtractionResult:
     """Función de conveniencia para scrapeo único."""
-    async with LandingScraper(**kwargs) as scraper:
-        return await scraper.scrape(url)
+    with LandingScraper(**kwargs) as scraper:
+        return scraper.scrape(url)
 
 
-async def scrape_batch(urls: list[str], **kwargs) -> list[LandingExtractionResult]:
+def scrape_batch(urls: list[str], **kwargs) -> list[LandingExtractionResult]:
     """Scrapea múltiples URLs en batch con rate limiting compartido."""
-    async with LandingScraper(**kwargs) as scraper:
+    with LandingScraper(**kwargs) as scraper:
         results = []
         for url in urls:
-            results.append(await scraper.scrape(url))
+            results.append(scraper.scrape(url))
         return results

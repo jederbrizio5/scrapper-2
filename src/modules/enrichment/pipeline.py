@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import time
@@ -8,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.modules.enrichment.dto import EnrichedDomain, PipelineState
-from src.modules.landing_scraper import LandingScraper, LandingExtractionResult
+from src.modules.landing_scraper import LandingScraper
 from src.modules.meta_ads.acquisition.browser_runner import MetaAdsBrowserRunner
 from src.modules.meta_ads.dto import BrowserAdDiscovery
 from src.modules.social_scraper import SocialProfileScraper
@@ -165,7 +164,10 @@ class EnrichmentPipeline:
             return
 
         logger.info(f"Enriqueciendo {len(discoveries)} anuncios en Meta Ads Library...")
-        results = self.browser_runner.run_enrichment_only(discoveries)
+        results = self.browser_runner.enrich_discoveries(
+            discoveries=discoveries,
+            browser=self.browser_runner._external_browser,
+        )
 
         for domain, result in zip(
             [d for d in domains if d.discovery and not d.meta_enrichment], results
@@ -181,8 +183,7 @@ class EnrichmentPipeline:
                 domain.meta_enrichment_status = "failed"
 
     def _run_landing_enrichment(self, domains: list[EnrichedDomain]):
-        """Ejecuta scraping de landing pages."""
-        import asyncio
+        """Ejecuta scraping de landing pages (sync, secuencial)."""
 
         pending = [
             d
@@ -216,8 +217,15 @@ class EnrichmentPipeline:
             logger.warning("No hay URLs de landing para scrapeear")
             return
 
-        # Ejecutar en batch async
-        results = asyncio.run(self._scrape_landings_batch(urls_to_scrape))
+        # Ejecutar secuencialmente en el hilo principal (evita problemas con asyncio loops)
+        results = {}
+        for domain_name, url in urls_to_scrape:
+            try:
+                logger.debug(f"Scrapeando landing: {url}")
+                result = self.landing_scraper.scrape(url)
+                results[url] = result
+            except Exception as e:
+                logger.error(f"Error en landing {url}: {e}")
 
         for domain in pending:
             landing_url = (
@@ -237,29 +245,6 @@ class EnrichmentPipeline:
                 }
 
             time.sleep(self.delay_landing)
-
-    async def _scrape_landings_batch(
-        self, urls: list[tuple[str, str]]
-    ) -> dict[str, LandingExtractionResult]:
-        """Scrapea múltiples landings en paralelo limitado."""
-        semaphore = asyncio.Semaphore(3)  # Max 3 concurrentes
-
-        async def scrape_one(domain: str, url: str):
-            async with semaphore:
-                result = await self.landing_scraper.scrape(url)
-                return url, result
-
-        tasks = [scrape_one(domain, url) for domain, url in urls]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        output = {}
-        for r in results:
-            if isinstance(r, Exception):
-                logger.error(f"Error en batch landing: {r}")
-            else:
-                url, result = r
-                output[url] = result
-        return output
 
     def _run_social_enrichment(self, domains: list[EnrichedDomain]):
         """Ejecuta scraping de perfiles sociales (FB/IG)."""
