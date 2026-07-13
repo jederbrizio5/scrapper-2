@@ -1,65 +1,58 @@
-# Proyecto: Sistema de Prospección de Meta Ads
+# Proyecto: Sistema de Prospeccion de Meta Ads
 
-## Visión General
-Este sistema tiene como objetivo principal la recoleccion estructurada de anuncios provenientes de Meta Ads Library.
+## Vision General
+Sistema de recoleccion estructurada de anuncios desde Meta Ads Library, disenado modularmente por fases.
 
-El proyecto está diseñado para construirse modularmente en fases. Actualmente hemos completado la Fase 0 (Bootstrap), la Fase 1 (Infraestructura de datos), la Fase 2 (Cliente Meta Ads / PoC navegador) y la Fase 3 (Adquisicion robusta por navegador).
+**Estado actual:** Fase 0, 1, 2, 3 y 3.2 completadas y estabilizadas. Fase 4 no iniciada.
 
-Nota de producto: la API de Meta no debe considerarse la fuente principal futura porque puede estar limitada a tipos de anuncios que no sirven al objetivo comercial. El camino principal es lectura por navegador con controles de tiempo, logs y seguridad operativa.
+Nota de producto: la API de Meta no debe considerarse la fuente principal futura. El camino principal es lectura por navegador con Playwright.
 
-## Estado Actual
+## Implementado
 
-Fase 0, Fase 1, Fase 2 y Fase 3 estan completadas y estabilizadas.
+### Fase 0 - Bootstrap
+- Scripts: instalacion, ejecucion, tests, lint, formato y check general.
+- Dependencias: `requirements.txt` y `requirements-dev.txt`.
+- Configuracion: variables de entorno via `src/config/settings.py`.
 
-### Implementado (Fase 0)
-- **Scripts**: instalacion, ejecucion, tests, lint, formato y check general.
-- **Dependencias**: `requirements.txt` y `requirements-dev.txt`.
-- **Configuracion**: variables de entorno cargadas desde `.env` mediante `src/config/settings.py`.
+### Fase 1 - Infraestructura de Datos
+- SQLite + SQLAlchemy 2.x + Alembic.
+- Modelos: Search, Domain, Company, Lead.
+- Repositorios genericos y especificos.
+- Tests de base de datos mockeada.
 
-### Implementado (Fase 1)
-- **Base de Datos y ORM**: SQLite, SQLAlchemy 2.x.
-- **Modelos**: Tablas base `Search`, `Domain`, `Company` y `Lead`.
-- **Repositorios**: Arquitectura de Repositorios genéricos y específicos.
-- **Migraciones**: Alembic configurado en `migrations/` y migración inicial.
-- **Tests**: Testing completo de base de datos.
+### Fase 2 - Cliente Meta Ads API
+- MetaClient HTTP desacoplado de persistencia.
+- Excepciones tipadas: AuthenticationException, RateLimitException.
+- Parser y DTOs estrictos.
+- Tests con `responses` (sin conexion externa).
 
-### Implementado (Fase 2)
-- **MetaClient**: Cliente HTTP genérico para interactuar con la Meta Ads Library, totalmente configurado mediante variables de entorno en `settings.py`.
-- **Excepciones Tipadas**: Clases específicas para manejar autenticación (`AuthenticationException`), límites (`RateLimitException`) y problemas de formato.
-- **Parser y DTOs**: Capa estricta de parseo transformando la respuesta de la Graph API a Data Transfer Objects (Ads, Page, Advertiser, Media).
-- **Desacoplamiento**: El cliente Meta NO conoce la base de datos ni hace persistencia.
-- **Testing**: Tests unitarios completos con `responses` que no requieren conexión a internet (Mocking).
+### Fase 3 - Adquisicion por Navegador
+- Discovery: anuncios con landing externa, descripcion, domain, advertiser_name.
+- Enrichment: usuarios sociales (FB/IG) y seguidores desde dialogo de detalles.
+- Sin sesion de Facebook requerida.
+- Modos headless y visible (debug).
+- Anti-deteccion: flags Chromium, User-Agent realista, override de webdriver.
+- CLI via `scripts/run_meta_ads_browser.py`.
 
-### Implementado (Fase 3)
-- **Adquisicion por navegador**: Sistema completo de discovery y enrichment desde Meta Ads Library con Playwright.
-- **Discovery**: Extracción de anuncios con landing externa, descripción completa, domain, advertiser_name y ad_library_url construida.
-- **Enrichment**: Extracción de usuarios sociales (Facebook/Instagram) y conteo de seguidores desde el diálogo de detalles.
-- **Sin sesión requerida**: Meta Ads Library funciona sin login de Facebook.
-- **Modo Debug**: Navegador visible, ejecución lenta, logs detallados.
-- **Modo Headless**: Ejecución normal sin intervención visual.
-- **CLI**: Script `run_meta_ads_browser.py` con argumentos configurables.
-- **DTOs**: `BrowserAdDiscovery`, `BrowserAdEnrichment`, `BrowserAdResult` con serialización JSON.
-- **12+ correcciones**:
-  - `ig.me` agregado a `BLOCKED_DOMAINS`
-  - `advertiser_name` con backward search (evita "Transparencia de la UE")
-  - Followers con "mill" (millones) soportado (×1.000.000)
-  - Decimal comma + "mil" con float math (275,7 mil → 275700)
-  - Descripción sin botones/nav (~30 líneas en `UI_NOISE_LINES`)
-  - Display URLs cortadas (BREAK en `CEFOMIN.CL`, `DAXUS.COM/...`)
-  - URLs mayúscula/emoji detectadas (`HTTPS://`, `📌 http://`)
-  - WhatsApp CTAs descartados (engagement href en TODOS los anchors)
-  - Landing URL desde botón CTA, no desde texto
-  - Ofertas porcentuales cortadas (`15% OFF` → BREAK)
-  - CTA text filtrado ("Visita el sitio web", "Chatea con nosotros")
-  - Anti-bloqueo: 9 flags, User-Agent realista, webdriver override, jitter
-- **Anti-detección**: 9 flags Chromium, User-Agent Chrome 125, `navigator.webdriver` override, viewport jitter ±20px, headers realistas, jitter ±30% en delays.
-- **Documentación de algoritmo**: `docs/doc.phase.3.md` con 14 secciones, 12 errores corregidos, diagramas de flujo.
-- **Tests**: 20 tests pasando, `./scripts/check.sh` sin errores.
+### Fase 3.2 - Mejoras de Adquisicion
+- Per-keyword limits, scroll infinito, modo append.
+- Resume cross-ejecucion con deduplicacion.
+- Checkpoint por keyword + signal handler.
+- Split por keyword + index.json.
+- Enrich in-place.
+- Reintentos con backoff + nueva sesion.
+- Proxies (unico o lista rotativa).
+- Sesion compartida (cada N keywords).
+- Timeout global, formato hora Argentina, output timestamp.
 
-## Criterio De Estabilidad
+## Criterio de Estabilidad
 
-El proyecto se considera estable cuando `./scripts/check.sh` pasa sin errores.
+El proyecto se considera estable cuando `./scripts/check.sh` pasa sin errores (28 tests: 25 unitarios + 3 integracion).
 
-## Documentacion Por Fase
+## Proxima Fase
 
-Cada fase debe tener su archivo en `docs/phases/` con objetivo, alcance, pruebas, logs esperados y resultado final.
+**Fase 4: No definida** (no iniciada). Pendiente de definicion por producto.
+
+## Documentacion por Fase
+
+Cada fase tiene su archivo en `docs/phases/` con objetivo, alcance, pruebas y resultado final.

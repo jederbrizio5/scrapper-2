@@ -1,60 +1,51 @@
 # Arquitectura del Sistema
 
-La arquitectura está dividida de forma modular para facilitar el mantenimiento y la escalabilidad.
+La arquitectura esta dividida de forma modular para facilitar el mantenimiento y la escalabilidad.
 
-## Estructura de Módulos
+## Estructura de Modulos
 
-* **`src/core/`**: Lógica central y abstracciones base que son reutilizadas por los demás módulos.
-* **`src/config/`**: Gestión de variables de entorno y configuración del sistema (nada hardcodeado).
-* **`src/database/`**: Conexiones a bases de datos (SQL/NoSQL) y capa de repositorios.
-* **`src/modules/`**: Modulos especificos del dominio de negocio.
-* **`src/models/`**: Modelos ORM SQLAlchemy.
-* **`src/repositories/`**: Operaciones de persistencia encapsuladas.
+* **`src/config/`**: Variables de entorno y configuracion del sistema.
+* **`src/database/`**: Conexion SQLAlchemy, sesiones y base declarativa.
+* **`src/models/`**: Modelos ORM SQLAlchemy (Search, Domain, Company, Lead).
+* **`src/repositories/`**: Operaciones de persistencia encapsuladas por entidad.
+* **`src/modules/meta_ads/`**: Modulo de dominio para adquisicion de Meta Ads.
+  * `dto/`: BrowserAdDiscovery, BrowserAdEnrichment, BrowserAdResult.
+  * `exceptions/`: MetaException, RequestException.
+  * `browser/`: BrowserManager y SessionManager (Playwright).
+  * `acquisition/`: AdsSearcher, AdsExtractor, MetaAdsBrowserRunner.
+
+Nota: `src/core/`, `src/services/` y `src/utils/` no existen actualmente.
 
 ## Flujo de Datos
 
-Flujo implementado para adquisicion por navegador (Playwright):
-
+### Flujo Principal (navegador, Fase 3)
 ```text
-Configuracion de busqueda (CLI)
-  -> BrowserManager / SessionManager (anti-deteccion)
-  -> AdsSearcher (navegacion + filtros)
-  -> AdsExtractor.discovery (scroll + cards + resumenes)
-  -> AdsExtractor.enrichment (dialogo + seccion anunciante)
-  -> DTOs BrowserAdResult (discovery + enrichment)
-  -> JSON (checkpoint por keyword)
+keywords
+  -> MetaAdsBrowserRunner
+  -> AdsSearcher (busqueda en Meta Ads Library)
+  -> AdsExtractor.extract_discovery_ads() (descubrimiento)
+  -> AdsExtractor.enrich_ads() (enriquecimiento)
+  -> BrowserAdResult[] (JSON de salida)
 ```
 
-Flujo secundario para Meta Ads API:
-
+### Flujo de Persistencia (Fase 1)
 ```text
-SearchRequest -> MetaClient -> MetaParser -> SearchResponse[Ad]
+Modelo ORM -> Repositorio -> Sesion SQLAlchemy -> SQLite
 ```
 
-Regla arquitectonica: `MetaClient` no debe importar repositorios ni modelos ORM. La union entre adquisicion y persistencia debe vivir en un orquestador futuro.
+## Reglas Arquitectonicas
 
-## Enrichment
+- No existe cliente HTTP de Meta API. Toda la adquisicion es via Playwright.
+- La union entre adquisicion y persistencia debe vivir en un orquestador futuro.
+- Playwright: tiempos configurables, reintentos limitados, logs con contexto, modo visible/headless.
 
-El enrichment abre cada `ad_library_url` individualmente, busca el dialogo
-"Detalles del anuncio" (excluyendo "Vincular con un anuncio"), expande la
-seccion "Informacion sobre el anunciante" via `_native_click()`, y extrae
-usuarios sociales FB/IG y seguidores del texto de la seccion expandida.
+## Caracteristicas de Fase 3.2
 
-Los resumenes ("Ver detalles del resumen") se expanden automaticamente
-durante discovery para revelar sub-cards.
-
-Reglas:
-
-* tiempos configurables.
-* reintentos limitados.
-* logs con contexto.
-* modo visible para depuracion.
-* tests unitarios con mocks.
-
-Reglas para navegador:
-
-* tiempos configurables.
-* reintentos limitados.
-* logs con contexto.
-* modo visible para depuracion.
-* tests unitarios con mocks.
+- Per-keyword limits, scroll infinito configurable, modo append, resume cross-ejecucion.
+- Checkpoint por keyword con signal handler (SIGINT/SIGTERM).
+- Split por keyword (archivos separados + index.json).
+- Enrich in-place (modifica archivos originales).
+- Reintentos con backoff exponencial y nueva sesion.
+- Proxies (unico o lista rotativa round-robin).
+- Sesion compartida (reutiliza contexto cada N keywords).
+- Timeout global, formato hora Argentina, output con timestamp.

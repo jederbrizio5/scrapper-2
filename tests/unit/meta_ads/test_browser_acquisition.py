@@ -7,7 +7,7 @@ from src.modules.meta_ads.browser.browser_manager import (
     ANTI_DETECTION_ARGS,
     BrowserManager,
 )
-from src.modules.meta_ads.dto import Ad, BrowserAdDiscovery, BrowserAdResult
+from src.modules.meta_ads.dto import BrowserAdDiscovery, BrowserAdResult
 
 
 @patch("src.modules.meta_ads.browser.browser_manager.sync_playwright")
@@ -55,13 +55,12 @@ def test_ads_extractor():
     ]
 
     extractor = AdsExtractor(mock_page)
-    ad = extractor.extract_first_ad()
+    ads = extractor.extract_discovery_ads(keyword="curso", limit=1)
 
-    assert ad is not None
-    assert isinstance(ad, Ad)
-    assert ad.page.name == "landing.example.com"
-    assert "Descripcion comercial del anuncio" in ad.body
-    assert ad.media[0].url == "https://landing.example.com/curso"
+    assert len(ads) == 1
+    assert ads[0].domain == "landing.example.com"
+    assert ads[0].library_id == "123"
+    assert "Descripcion comercial del anuncio" in ads[0].description
 
 
 def test_ads_searcher_builds_required_filters():

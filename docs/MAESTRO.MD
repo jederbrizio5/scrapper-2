@@ -1,8 +1,10 @@
 # Manual Maestro del Proyecto
 
-Este archivo es la fuente de verdad para cualquier persona, IA o agente que trabaje en este proyecto.
+Este archivo es la fuente de verdad absoluta para cualquier persona, IA o agente que trabaje en este proyecto.
 
-Antes de modificar codigo, leer en este orden:
+## Orden de Lectura Obligatorio
+
+Antes de modificar codigo, leer los siguientes documentos en este orden estricto:
 
 1. `README.md`
 2. `docs/MAESTRO.MD`
@@ -19,32 +21,55 @@ Antes de modificar codigo, leer en este orden:
 13. `docs/DECISIONS.md`
 14. `docs/phases/`
 
-## Estado Actual
+## Estado Actual del Proyecto
 
-El proyecto esta estabilizado hasta Fase 3.2.
+El proyecto esta estabilizado hasta Fase 3 (completada). La Fase 4 no ha comenzado.
 
-Implementado:
-
-- Bootstrap de proyecto con scripts de instalacion, ejecucion, lint, formato, tests y check general.
+### Fase 0 - Bootstrap
+- Scripts de instalacion, ejecucion, lint, formato, tests y check general.
 - Configuracion por variables de entorno en `src/config/settings.py`.
-- Base de datos SQLite con SQLAlchemy 2.x.
-- Migraciones Alembic en `migrations/`.
+- Dependencias gestionadas via `requirements.txt` y `requirements-dev.txt`.
+
+### Fase 1 - Infraestructura de Datos
+- Base de datos SQLite con SQLAlchemy 2.x y Alembic para migraciones.
 - Modelos ORM: `Search`, `Domain`, `Company`, `Lead`.
 - Repositorios: `SearchRepository`, `DomainRepository`, `CompanyRepository`, `LeadRepository`.
-- Cliente Meta Ads Library desacoplado de persistencia.
-- DTOs para requests/responses de Meta Ads.
-- Parser de respuesta Graph API a DTOs.
-- Adquisicion por navegador con Playwright: discovery y enrichment.
-- Extraction de usuarios sociales (FB/IG) y seguidores desde Meta Ads Library.
-- Tests unitarios e integracion mockeados.
-- Fase 3.2: configuracion total por CLI, persistencia robusta con checkpoint y signal handler,
-  enrichment-only, dedup cross-keyword, limites por keyword, bloqueo extra de dominios.
+- Tests unitarios y de integracion con base de datos mockeada.
 
-Decision importante:
+### Fase 2 - Cliente Meta Ads API (eliminado)
+- Cliente HTTP `MetaClient` fue eliminado. No se utiliza en produccion.
+- La adquisicion se realiza exclusivamente via navegador (Playwright).
 
-- La API de Meta queda como componente secundario y testeado.
-- La adquisicion principal se basa en navegador con Playwright, porque la API puede estar limitada a anuncios politicos o categorias que no cubren el objetivo comercial del proyecto.
-- Meta Ads Library funciona sin sesion de Facebook para discovery y enrichment.
+### Fase 3 - Adquisicion por Navegador (Playwright)
+- Sistema completo de discovery y enrichment desde Meta Ads Library.
+- Anti-deteccion: flags Chromium, User-Agent realista, `navigator.webdriver` override.
+- Discovery: extraccion de anuncios con landing externa, descripcion, domain, advertiser_name.
+- Enrichment: dialogo de detalles, usuarios sociales (FB/IG), seguidores.
+- Sin sesion de Facebook requerida.
+- Modos headless y visible (debug).
+- CLI via `scripts/run_meta_ads_browser.py`.
+
+### Fase 3.2 - Mejoras de Adquisicion (completada)
+- Per-keyword limits via `"keyword:limite"`.
+- Scroll infinito configurable (`--max-scrolls`, `--empty-scrolls`).
+- Modo append para retomar ejecuciones.
+- Resume cross-ejecucion con deduplicacion.
+- Checkpoint por keyword con signal handler (SIGINT/SIGTERM).
+- Split por keyword en archivos separados + index.json.
+- Enrich in-place (modifica archivos originales sin duplicar).
+- Reintentos automaticos con backoff exponencial y nueva sesion.
+- Proxies: unico o lista rotativa round-robin.
+- Sesion compartida (reutiliza contexto Playwright cada N keywords).
+- Timeout global configurable.
+- Formato hora Argentina en logs y datos.
+- Output con timestamp automatico.
+
+### Decisiones Arquitectonicas Clave
+
+- Toda la adquisicion se basa en navegador con Playwright (Meta Ads Library).
+- Meta Ads Library funciona sin sesion de Facebook.
+- No existe cliente HTTP de Meta API — fue eliminado por no usarse en produccion.
+- La conexion entre adquisicion y persistencia debe vivir en un orquestador futuro.
 
 ## Arquitectura Vigente
 
@@ -56,10 +81,9 @@ src/
 ├── repositories/           # Persistencia encapsulada por entidad
 └── modules/
     └── meta_ads/
-        ├── client/         # Cliente HTTP Meta Ads Library (secundario)
-        ├── dto/            # Objetos tipados de entrada/salida
-        ├── parser/         # Parseo de JSON externo a DTOs internos
-        ├── browser/        # Playwright: BrowserManager, SessionManager
+        ├── dto/            # BrowserAdDiscovery, BrowserAdEnrichment, BrowserAdResult
+        ├── exceptions/     # MetaException, RequestException
+        ├── browser/        # BrowserManager, SessionManager (Playwright)
         └── acquisition/    # AdsSearcher, AdsExtractor, MetaAdsBrowserRunner
 ```
 
@@ -76,18 +100,11 @@ src/
 - Cada nueva logica debe tener test unitario o de integracion segun corresponda.
 - Antes de cerrar cualquier tarea, ejecutar `./scripts/check.sh`.
 - No trabajar directo en `main`; usar ramas y Pull Requests segun `docs/GIT_WORKFLOW.md`.
+- Cualquier integracion nueva debe documentar riesgos, plan de rollback y pasos de verificacion.
 
-## Flujo De Datos Actual
+## Flujo De Datos
 
-```text
-SearchRequest
-  -> MetaClient.search_ads()
-  -> MetaParser.parse_search_response()
-  -> SearchResponse[Ad]
-```
-
-Flujo de Fase 3 por navegador:
-
+### Flujo Principal (navegador)
 ```text
 keywords
   -> MetaAdsBrowserRunner
@@ -97,34 +114,37 @@ keywords
   -> BrowserAdResult[] (JSON de salida)
 ```
 
-La persistencia existe pero todavia no hay un orquestador productivo que conecte busquedas Meta con guardado en base de datos. Esa conexion no debe meterse dentro de `MetaClient` ni dentro del scraper por navegador.
+La persistencia existe pero todavia no hay un orquestador productivo que conecte busquedas Meta con guardado en base de datos.
 
 ## Comandos Oficiales
 
-- Instalar dependencias: `./scripts/install.sh`
-- Ejecutar entrada principal: `./scripts/run.sh`
-- Ejecutar scraper Fase 3: `python scripts/run_meta_ads_browser.py --keyword "curso" --limit 3 --headless`
-- Ejecutar tests: `./scripts/test.sh`
-- Formatear: `./scripts/format.sh`
-- Lint: `./scripts/lint.sh`
-- Validacion completa: `./scripts/check.sh`
+| Comando | Descripcion |
+|---------|-------------|
+| `./scripts/install.sh` | Instalar dependencias |
+| `./scripts/run.sh` | Ejecutar entrada principal |
+| `python scripts/run_meta_ads_browser.py --keyword "curso" --limit 3 --headless` | Ejecutar scraper Fase 3 |
+| `./scripts/test.sh` | Ejecutar tests |
+| `./scripts/format.sh` | Formatear codigo |
+| `./scripts/lint.sh` | Lint |
+| `./scripts/check.sh` | Validacion completa (obligatorio antes de cerrar tareas) |
 
 ## Checklist Para Agentes
 
-Antes de finalizar una tarea, confirmar:
+Antes de finalizar cualquier tarea:
 
-- `./scripts/check.sh` pasa.
-- No se agregaron secretos.
-- La rama de trabajo no es `main`.
-- El Pull Request incluye pruebas, riesgos y rollback.
-- No se mezclaron responsabilidades entre cliente, parser, repositorio y servicios.
-- La documentacion fue actualizada si cambio arquitectura, fase o uso.
-- `docs/DECISIONS.md` fue actualizado si hubo una decision relevante.
+- [ ] `./scripts/check.sh` pasa sin errores.
+- [ ] No se agregaron secretos ni credenciales al repositorio.
+- [ ] La rama de trabajo no es `main`.
+- [ ] El Pull Request incluye pruebas, riesgos y plan de rollback.
+- [ ] No se mezclaron responsabilidades entre cliente, parser, repositorio y servicios.
+- [ ] La documentacion fue actualizada si cambio arquitectura, fase o uso.
+- [ ] `docs/DECISIONS.md` fue actualizado si hubo una decision relevante.
+- [ ] No hay archivos, modulos o tests huerfanos que no correspondan a la fase actual.
 
 ## Fase Actual
 
-La fase actual es Fase 3 completada: adquisicion por navegador y extraccion inicial.
+**Fase 3 completada.** Proxima: **Fase 4 (no iniciada)**.
 
-El objetivo fue abrir Meta Ads Library, aplicar filtros, extraer anuncios con landing externa y enriquecer desde el detalle.
+Documentacion de fase completada en `docs/phases/PHASE_03_BROWSER_ACQUISITION_PLAN.md`.
 
-La documentacion de la fase completa vive en `docs/phases/PHASE_03_BROWSER_ACQUISITION_PLAN.md`.
+La planificacion de Fase 4 se definira cuando el producto lo indique.

@@ -2,7 +2,7 @@ import logging
 from urllib.parse import urlencode
 
 from playwright.sync_api import Page
-from src.modules.meta_ads.client.exceptions import RequestException
+from src.modules.meta_ads.exceptions import RequestException
 
 logger = logging.getLogger(__name__)
 

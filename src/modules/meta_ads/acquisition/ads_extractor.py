@@ -7,13 +7,9 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import ElementHandle, Page
 from src.modules.meta_ads.dto import (
-    Ad,
-    Advertiser,
     BrowserAdDiscovery,
     BrowserAdEnrichment,
     BrowserAdResult,
-    Media,
-    Page as DtoPage,
 )
 
 ARG_TZ = timezone(timedelta(hours=-3))
@@ -183,26 +179,6 @@ class AdsExtractor:
         base = base_ms if base_ms is not None else self.action_delay_ms
         jitter = int(base * self.JITTER_RATIO * random.random())
         return base + jitter
-
-    def extract_first_ad(self) -> Ad | None:
-        """Mantiene compatibilidad con la PoC anterior devolviendo un DTO generico."""
-        discoveries = self.extract_discovery_ads(keyword="poc", limit=1)
-        if not discoveries:
-            return None
-
-        discovery = discoveries[0]
-        return Ad(
-            id=discovery.library_id,
-            creation_time=datetime.now(),
-            status="active",
-            body=discovery.description or "",
-            page=DtoPage(id=discovery.library_id, name=discovery.domain),
-            advertiser=Advertiser(
-                id=discovery.library_id,
-                name=discovery.advertiser_name or discovery.domain,
-            ),
-            media=[Media(type="landing", url=discovery.landing_url)],
-        )
 
     SUMMARY_BUTTON_TEXTS: tuple[str, ...] = (
         "Ver detalles del resumen",
