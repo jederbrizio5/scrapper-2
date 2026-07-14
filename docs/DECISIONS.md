@@ -77,3 +77,8 @@
 - **Contexto**: Implementacion incorrecta de Fase 4 (hallucinada por IA) agrego modulos de enrichment, landing_scraper y social_scraper no documentados ni validados, junto con documentacion desfasada. Tambien se elimino el cliente HTTP de Meta API (no usado en produccion).
 - **Decision**: Eliminar todos los modulos y documentacion de la Fase 4 incorrecta. Eliminar cliente HTTP Meta API, parser y DTOs asociados. Restaurar el proyecto al estado Fase 3.2 estabilizado. Actualizar documentacion completa.
 - **Consecuencias**: El proyecto vuelve a un estado estable y documentado (28 tests, solo Playwright). Fase 4 queda pendiente de definicion.
+
+## 2026-07-13: Planificacion de Fase 4 — Enriquecimiento Profundo
+- **Contexto**: Se requiere enriquecer las empresas descubiertas via Meta Ads Library con informacion profunda de redes sociales (FB/IG), landing pages y dominio completo. El objetivo es tener perfiles completos para calcular score de aptitud comercial.
+- **Decision**: Implementar Fase 4 en 5 etapas secuenciales: (4.1) DTOs y modelo de datos con renombrado de `enrichment` a `enrichment_library`, (4.2) Social Enrichment, (4.3) Landing Enrichment, (4.4) Domain Enrichment, (4.5) Orquestacion y CLI. Usar httpx + selectolax + phonenumbers para rapidez, Playwright para JS-heavy, y pipeline multi-capa para deteccion de pais. Login opcional via env vars para redes sociales. Tests reales contra URLs conocidas con screenshots automaticos.
+- **Consecuencias**: Se extiende `BrowserAdResult` con 3 nuevos campos opcionales. La serializacion JSON cambia (`enrichment` → `enrichment_library`). Cada enriquecedor es independiente con graceful degradation. Se requiere `httpx`, `selectolax`, `phonenumbers` como nuevas dependencias.
